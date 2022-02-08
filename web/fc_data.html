@@ -1,0 +1,283 @@
+<html lang="en">
+<head>
+    <title id='Description'>Fuel Cell Tracker</title>
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.base.css" type="text/css" />
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.web.css" type="text/css" />
+    <script type="text/javascript" src="/scripts/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxcore.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxchart.core.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdraw.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdata.js"></script>
+	<script type="text/javascript" src="/jqwidgets/jqxdatetimeinput.js"></script>
+	<script type="text/javascript" src="/jqwidgets/jqxcalendar.js"></script>
+    <script type="text/javascript">
+
+        var start = new Date();
+        start.setSeconds(0);
+        start.setMinutes(0);  
+        start.setHours(0);
+        var end = new Date(start);
+        end.setHours(23);
+        end.setMinutes(59);
+        end.setSeconds(59);
+        var currentTimeOut;
+		var device = 1;
+
+		function buildURLForTimes(start, end) {
+			$("#startAt").jqxDateTimeInput('setDate', start );
+			$("#endAt").jqxDateTimeInput('setDate', end );
+			url = encodeURI("/fcdata/"
+					+ start.getFullYear() + "-" + (start.getMonth() + 1) + "-" + start.getDate() + " " + start.getHours() + ":" + start.getMinutes()
+					+ "/" + end.getFullYear() + "-" + (end.getMonth() + 1) + "-" +  end.getDate() + " " + end.getHours() + ":" + end.getMinutes());
+			return url;
+    	}
+
+		function buildURL() {
+			end = new Date();
+			start = new Date(end - document.getElementById("timeRange").value);
+			return buildURLForTimes(start, end);
+		}
+		function buildURLCustomTimes() {
+			end = $("#endAt").jqxDateTimeInput('value');
+			start = $("#startAt").jqxDateTimeInput('value');
+			return buildURLForTimes(start, end);
+    	}
+
+		function xAxisFormatFunction(value, itemIndex, series, group) {
+        	var dt = new Date(value * 1000);
+			return dt.getHours().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false}) + ":"
+													 + dt.getMinutes().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+        }
+
+        $(document).ready(function () {
+			var urlObject = new URL(document.location.href);
+
+			device = urlObject.searchParams.get("device");
+
+			if ((device != 1) && (device != 2)) {
+				alert("Invalid device [" + device + "] selected")
+				device = 1;
+			}
+
+			// prepare jqxChart settings
+			var currentSettings = {
+				title: "Fuel Cell 1 Performance",
+				description: "Fuel Cell Power.",
+				enableAnimations: false,
+				animationDuration: 1000,
+				enableAxisTextAnimation: true,
+				showLegend: true,
+				padding: { left: 5, top: 5, right: 5, bottom: 5 },
+				titlePadding: { left: 90, top: 0, right: 0, bottom: 10 },
+				categoryAxis: {
+					dataField: 'Logged',
+					showGridLines: false,
+					textRotationAngle: 270,
+					unitInterval: 1800,
+					formatFunction: xAxisFormatFunction,
+					minValue: Math.trunc(start.getTime() / 1000),
+					maxValue: Math.trunc(end.getTime() / 1000)
+				},
+				colorScheme: 'scheme01',
+				seriesGroups: [{
+					type: 'spline',
+					valueAxis: {
+						interval: 1,
+						gridLines: {
+							visible: true,
+							step: 1,
+						},
+						labels: {
+							formatSettings: {
+								decimalPlaces: 0,
+							},
+							visible: true,
+							step: 1,
+						},
+						minValue: 0,
+						maxValue: 4000,
+						description: 'Watts',
+						gridLinesColor: '#D02020'
+					},
+					series: [{
+						dataField: 'FC1Power',
+						displayText: 'Fuel Cell 1 Watts',
+						lineColor: '#D02020',
+						fillColor: '#D02020',
+					}]
+				}, {
+					type: 'spline',
+					valueAxis: {
+						interval: 1,
+						gridLines: {
+							visible: true,
+							step: 1,
+						},
+						labels: {
+							formatSettings: {
+								decimalPlaces: 0,
+							},
+							visible: true,
+							step: 1,
+						},
+						minValue: 25,
+						maxValue: 70,
+						description: 'Volts',
+						gridLinesColor: '#2020D0'
+					},
+					series: [{
+						dataField: 'FC1Volts',
+						displayText: 'Fuel Cell 1 Volts',
+						lineColor: '#2020D0',
+						fillColor: '#2020D0',
+					}]
+				}, {
+					type: 'spline',
+					valueAxis: {
+						interval: 1,
+						gridLines: {
+							visible: true,
+							step: 1,
+						},
+						labels: {
+							formatSettings: {
+								decimalPlaces: 0,
+							},
+							visible: true,
+							step: 1,
+						},
+						minValue: 0,
+						maxValue: 100,
+						description: 'Amps',
+						gridLinesColor: '#20D020'
+					},
+					series: [{
+							dataField: 'FC1Current',
+							displayText: 'Fuel Cell 1 Amps',
+							lineColor: '#20D020',
+							fillColor: '#20D020',
+						}]
+				}]
+			};
+
+			if (device == 2) {
+				currentSettings.title = "Fuel Cell 2 Performance";
+				currentSettings.seriesGroups[0].series[0].dataField = 'FC2Power';
+				currentSettings.seriesGroups[1].series[0].dataField = 'FC2Volts';
+				currentSettings.seriesGroups[2].series[0].dataField = 'FC2Current';
+			}
+
+			$('#currentChartContainer').jqxChart(currentSettings);
+			sa = $("#startAt");
+			ea = $("#endAt")
+			sa.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+			sa.jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
+			sa.css("float", "left");
+			ea.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+			ea.jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
+			ea.css("float", "left");
+			getCurrent();
+		});
+
+		function refresh(url) {
+			fetch(url)
+				.then( function(response) {
+					if (response.status === 200) {
+						response.json()
+							.then(function(data) {
+								end = Math.trunc($("#endAt").jqxDateTimeInput('value') / 1000) + 60;
+								start = ($("#startAt").jqxDateTimeInput('value') / 1000)
+								if (typeof data.error != "undefined") {
+									alert(data.error);
+								} else {
+									data.push({
+										"Logged":(Math.trunc(end)).toString(),
+										"FC1Volts":data[data.length - 1].FC1Volts,
+										"FC1Current":data[data.length - 1].FC1Current,
+										"FC1Power":data[data.length - 1].FC1Power,
+										"FC2Volts":data[data.length - 1].FC2Volts,
+										"FC2Current":data[data.length - 1].FC2Current,
+										"FC2Power":data[data.length - 1].FC2Power,
+										"H2Pressure":data[data.length - 1].H2Pressure
+									});
+
+									chart = $('#currentChartContainer');
+									chart.jqxChart({'source':data});
+									chart.jqxChart({'categoryAxis':{
+										dataField: 'Logged',
+										showGridLines: false,
+										textRotationAngle: 270,
+										unitInterval: 1800,
+										formatFunction: xAxisFormatFunction,
+										'minValue':start,
+										'maxValue':end}});
+									chart.jqxChart('update');
+									$("#waiting").hide();
+								}
+							});
+					}
+				})
+				.catch(function(err) {
+					if(err.name === "TypeError" && err.message !== "cancelled") {
+						alert('Current Fetch Error :-S' + err.message);
+					}
+				});
+				currentTimeOut = setTimeout(getCurrent, 15000);
+		};
+
+		function getCurrent() {
+			clearTimeout(currentTimeOut);
+			currentTimeOut = 0;
+			if ($("#timeRange").val() === 0) {
+				$("#customDateTimes").show();
+				$("#waiting").show();
+				refresh(buildURLCustomTimes());
+			} else {
+				$("#customDateTimes").hide();
+				$("#waiting").show();
+				refresh(buildURL());
+			}
+		}
+	
+	
+		function goBack() {
+			clearTimeout(currentTimeOut);
+			if(history.length > 1) {
+				setTimeout(window.history.back, 1000);
+			} else {
+				setTimeout(window.close, 1000);
+			}
+		}
+    </script>
+</head>
+    <body style="background:white;">
+		<div id='currentChartContainer' style="width:100%; height: 96%" ></div>
+		<div style="text-align:center; height: 4%">
+			<div style="float:left;height:100%">
+				<button onClick="goBack()" style="width:100%">Back</button>&nbsp;
+			</div>
+			<div style="float:left">
+				<select id="timeRange" onchange="getCurrent()">
+					<option value=259200000>3 Days</option>
+					<option value=172800000>2 Days</option>
+					<option value=86400000>24 Hours</option>
+					<option value=43200000>12 Hours</option>
+					<option value=28800000 selected='selected'>8 Hours</option>
+					<option value=14400000>4 Hours</option>
+					<option value=7200000>2 Hours</option>
+					<option value=3600000>1 Hour</option>
+					<option value=1800000>30 Minutes</option>
+					<option value=0>Custom</option>
+				</select>
+			</div>
+			<div id="customDateTimes" style="float:left">
+				<span style="float:left;font-size:larger">Start At:&nbsp;</span>
+				<div id="startAt"></div>
+				<span style="float:left;font-size:larger">&nbsp;End At:&nbsp;</span>
+				<div id="endAt"></div>&nbsp;
+				<button onClick="refresh(buildURLCustomTimes())" style="height:100%; width:100px" >Update</button>
+			</div>
+			<div id="waiting" style="float:left; visibility:visible"><span>Fetching Data please stand by...</span></div>
+		</div>
+    </body>
+</html>
