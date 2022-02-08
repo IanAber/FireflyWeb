@@ -1694,14 +1694,16 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("From ", from, " to ", to)
 
-	rows, err := pDB.Query(`SELECT UNIX_TIMESTAMP(logged), IFNULL(el1Rate ,0), IFNULL(el1ElectrolyteTemp ,0), IFNULL(el1State ,''), IFNULL(el1H2Flow, 0), IFNULL(el1H2InnerPressure, 0),
-		IFNULL(el1H2OuterPressure, 0), IFNULL(el1StackVoltage, 0), IFNULL(el1SystemState, ""), IFNULL(el1WaterPressure, 0),
-		IFNULL(dr1Temp0, 0), IFNULL(dr1Temp1, 0), IFNULL(dr1Temp2, 0), IFNULL(dr1Temp3, 0), IFNULL(dr1InputPressure, 0), IFNULL(dr1OutputPressure, 0),
-		IFNULL(el2Rate ,0), IFNULL(el2ElectrolyteTemp ,0), IFNULL(el2State ,''), IFNULL(el2H2Flow, 0), IFNULL(el2H2InnerPressure, 0),
-		IFNULL(el2H2OuterPressure, 0), IFNULL(el2StackVoltage, 0), IFNULL(el2SystemState, ""), IFNULL(el2WaterPressure, 0),
-		IFNULL(dr2Temp0, 0), IFNULL(dr2Temp1, 0), IFNULL(dr2Temp2, 0), IFNULL(dr2Temp3, 0), IFNULL(dr2InputPressure, 0), IFNULL(dr2OutputPressure, 0),
-		IFNULL(gasTankPressure, 0)
-	  FROM firefly.logging WHERE logged BETWEEN ? AND ?`, from, to)
+	rows, err := pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(AVG(el1Rate) ,0), IFNULL(AVG(el1ElectrolyteTemp) ,0), IFNULL(MAX(el1State) ,''), IFNULL(AVG(el1H2Flow), 0), IFNULL(AVG(el1H2InnerPressure), 0),
+		IFNULL(AVG(el1H2OuterPressure), 0), IFNULL(AVG(el1StackVoltage), 0), IFNULL(MAX(el1SystemState), ''), IFNULL(AVG(el1WaterPressure), 0),
+		IFNULL(AVG(dr1Temp0), 0), IFNULL(AVG(dr1Temp1), 0), IFNULL(AVG(dr1Temp2), 0), IFNULL(AVG(dr1Temp3), 0), IFNULL(AVG(dr1InputPressure), 0), IFNULL(AVG(dr1OutputPressure), 0),
+		IFNULL(AVG(el2Rate), 0), IFNULL(AVG(el2ElectrolyteTemp), 0), IFNULL(MAX(el2State), ''), IFNULL(AVG(el2H2Flow), 0), IFNULL(AVG(el2H2InnerPressure), 0),
+		IFNULL(AVG(el2H2OuterPressure), 0), IFNULL(AVG(el2StackVoltage), 0), IFNULL(MAX(el2SystemState), ''), IFNULL(AVG(el2WaterPressure), 0),
+		IFNULL(AVG(dr2Temp0), 0), IFNULL(AVG(dr2Temp1), 0), IFNULL(AVG(dr2Temp2), 0), IFNULL(AVG(dr2Temp3), 0), IFNULL(AVG(dr2InputPressure), 0), IFNULL(AVG(dr2OutputPressure), 0),
+		IFNULL(AVG(gasTankPressure), 0)
+	  FROM firefly.logging
+	  WHERE logged BETWEEN ? and ?
+	  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
 	if err != nil {
 		fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
 	}
@@ -1747,9 +1749,11 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("From ", from, " to ", to)
 
-	rows, err := pDB.Query(`SELECT UNIX_TIMESTAMP(logged), IFNULL(fc1OutputVoltage,0), IFNULL(fc1OutputCurrent,0), IFNULL(fc1OutputPower,0), 
-       IFNULL(fc2OutputVoltage,0), IFNULL(fc2OutputCurrent,0), IFNULL(fc2OutputPower,0), gasTankPressure
-  FROM firefly.logging WHERE logged BETWEEN ? AND ?`, from, to)
+	rows, err := pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(AVG(fc1OutputVoltage),0), IFNULL(AVG(fc1OutputCurrent),0), IFNULL(AVG(fc1OutputPower),0), 
+       IFNULL(AVG(fc2OutputVoltage),0), IFNULL(AVG(fc2OutputCurrent),0), IFNULL(AVG(fc2OutputPower),0), AVG(gasTankPressure)
+  FROM firefly.logging
+  WHERE logged BETWEEN ? and ?
+  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
 	if err != nil {
 		fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
 	}
