@@ -2,7 +2,6 @@
 
 CREATE DATABASE `firefly2` DEFAULT CHARACTER SET utf8;
 
-
 CREATE TABLE `firefly2`.`logging` (
   `logged` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `el1Status` varchar(25) DEFAULT NULL,
@@ -79,15 +78,11 @@ CREATE TABLE `firefly2`.`logging` (
   PRIMARY KEY (`logged`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-
-
-
 DROP USER IF EXISTS 'ff2'@'localhost';
-
 
 CREATE USER ff2@localhost identified BY 'password';
 GRANT select,insert,update ON firefly.logging TO 'ff2'@'localhost';
 
-GRANT Execute ON firefly.* TO 'ff2'@'localhost';
+GRANT Execute, Usage ON firefly.* TO 'ff2'@'localhost';
 GRANT Create temporary tables ON firefly.* TO 'ff2'@'localhost';
 
