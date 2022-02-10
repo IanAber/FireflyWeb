@@ -152,7 +152,7 @@
 						gridLinesColor: '#20D020'
 					},
 					series: [{
-						dataField: 'EL1Flow',
+						dataField: 'EL1H2Flow',
 						displayText: 'Production (NL/hr)',
 						lineColor: '#20D020',
 						fillColor: '#20D020',
@@ -164,7 +164,7 @@
 				currentSettings.title = "Hydrogen Generation Electrolyser 2";
 				currentSettings.seriesGroups[0].series[0].dataField = 'EL2Rate';
 				currentSettings.seriesGroups[1].series[0].dataField = 'EL2Temp';
-				currentSettings.seriesGroups[2].series[0].dataField = 'EL2Flow';
+				currentSettings.seriesGroups[2].series[0].dataField = 'EL2H2Flow';
 			}
 			$('#currentChartContainer').jqxChart(currentSettings);
 			$("#startAt").jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
