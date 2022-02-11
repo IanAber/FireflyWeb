@@ -54,7 +54,8 @@
 
 			device = urlObject.searchParams.get("device");
 
-			if ((device != 1) && (device != 2)) {
+			device = parseInt(device)
+			if ((device !== 1) && (device !== 2)) {
 				alert("Invalid device [" + device + "] selected")
 				device = 1;
 			}
@@ -160,7 +161,7 @@
 				}]
 			};
 
-			if (device == 2) {
+			if (device === 2) {
 				currentSettings.title = "Fuel Cell 2 Performance";
 				currentSettings.seriesGroups[0].series[0].dataField = 'FC2Power';
 				currentSettings.seriesGroups[1].series[0].dataField = 'FC2Volts';
@@ -223,7 +224,7 @@
 					}
 				});
 				currentTimeOut = setTimeout(getCurrent, 15000);
-		};
+		}
 
 		function getCurrent() {
 			clearTimeout(currentTimeOut);
@@ -257,6 +258,7 @@
 				<button onClick="goBack()" style="width:100%">Back</button>&nbsp;
 			</div>
 			<div style="float:left">
+				<label for="timeRange">Span</label>
 				<select id="timeRange" onchange="getCurrent()">
 					<option value=259200000>3 Days</option>
 					<option value=172800000>2 Days</option>
