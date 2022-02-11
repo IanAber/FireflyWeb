@@ -57,6 +57,7 @@ type electrolyserStatus struct {
 	MaxTankPressure       int64
 	RestartPressure       int64
 	StackVoltage          float64
+	StackCurrent          float64
 }
 
 type dryerStatus struct {
@@ -371,11 +372,11 @@ func populateSystemInfo(text string) {
 			case "EL_Addresses":
 				systemConfig.ElAddresses = value
 			case "FC_and_EL_OK":
-				systemConfig.FcAndElOk = (value == "True")
+				systemConfig.FcAndElOk = value == "True"
 			case "Ignore_EL_State":
-				systemConfig.IgnoreElState = (value == "True")
+				systemConfig.IgnoreElState = value == "True"
 			case "Solar_Array_Installed":
-				systemConfig.SolarArrayInstalled = (value == "True")
+				systemConfig.SolarArrayInstalled = value == "True"
 			case "Solar_Meter_Max":
 				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
 				systemConfig.SolarMeterMax = int16(n)
@@ -619,6 +620,8 @@ func populateElectrolyserData(text string) (status *electrolyserStatus) {
 				status.ElState = value
 			case "Stack Voltage":
 				status.StackVoltage, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 64)
+			case "Stack Current":
+				status.StackCurrent, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 64)
 			}
 		}
 		if levelVeryHigh {
@@ -942,17 +945,17 @@ func getFuelCellError(faultFlag rune, FaultFlag string) []string {
 		return errors
 	}
 	FaultFlag = strings.Trim(FaultFlag, " ")
-	flag, err := strconv.ParseUint(FaultFlag, 16, 32)
+	faultFlagValue, err := strconv.ParseUint(FaultFlag, 16, 32)
 	if err != nil {
 		log.Println(err)
 		return errors
 	}
-	if flag == 0xffffffff {
+	if faultFlagValue == 0xffffffff {
 		return errors
 	}
 	mask := uint64(0x80000000)
 	for i := 0; i < 32; i++ {
-		if (flag & mask) != 0 {
+		if (faultFlagValue & mask) != 0 {
 			switch faultFlag {
 			case 'A':
 				errors = append(errors, getErrorAKey(i))
@@ -1270,6 +1273,7 @@ func logStatus() {
 		el1H2InnerPressure  sql.NullFloat64
 		el1H2OuterPressure  sql.NullFloat64
 		el1StackVoltage     sql.NullFloat64
+		el1StackCurrent     sql.NullFloat64
 		el1SystemState      sql.NullString
 		el1WaterPressure    sql.NullFloat64
 
@@ -1291,6 +1295,7 @@ func logStatus() {
 		el2H2InnerPressure  sql.NullFloat64
 		el2H2OuterPressure  sql.NullFloat64
 		el2StackVoltage     sql.NullFloat64
+		el2StackCurrent     sql.NullFloat64
 		el2SystemState      sql.NullString
 		el2WaterPressure    sql.NullFloat64
 
@@ -1340,6 +1345,7 @@ func logStatus() {
 	params.el1H2InnerPressure.Valid = false
 	params.el1H2OuterPressure.Valid = false
 	params.el1StackVoltage.Valid = false
+	params.el1StackCurrent.Valid = false
 	params.el1SystemState.Valid = false
 	params.el1WaterPressure.Valid = false
 
@@ -1352,6 +1358,7 @@ func logStatus() {
 	params.el2H2InnerPressure.Valid = false
 	params.el2H2OuterPressure.Valid = false
 	params.el2StackVoltage.Valid = false
+	params.el2StackCurrent.Valid = false
 	params.el2SystemState.Valid = false
 	params.el2WaterPressure.Valid = false
 
@@ -1419,6 +1426,8 @@ func logStatus() {
 			params.el1Rate.Valid = true
 			params.el1StackVoltage.Float64 = SystemStatus.Electrolysers[0].StackVoltage
 			params.el1StackVoltage.Valid = true
+			params.el1StackCurrent.Float64 = SystemStatus.Electrolysers[0].StackCurrent
+			params.el1StackCurrent.Valid = true
 			params.el1WaterPressure.Float64 = SystemStatus.Electrolysers[0].WaterPressure
 			params.el1WaterPressure.Valid = true
 		} else {
@@ -1446,6 +1455,8 @@ func logStatus() {
 			params.el2Rate.Valid = true
 			params.el2StackVoltage.Float64 = SystemStatus.Electrolysers[1].StackVoltage
 			params.el2StackVoltage.Valid = true
+			params.el2StackCurrent.Float64 = SystemStatus.Electrolysers[1].StackCurrent
+			params.el2StackCurrent.Valid = true
 			params.el2WaterPressure.Float64 = SystemStatus.Electrolysers[1].WaterPressure
 			params.el2WaterPressure.Valid = true
 			params.el2SystemState.String = SystemStatus.Electrolysers[1].SystemState
@@ -1560,18 +1571,18 @@ func logStatus() {
 	}
 
 	strCommand := `INSERT INTO firefly.logging(
-            el1Status, el1Rate, el1ElectrolyteLevel, el1ElectrolyteTemp, el1State, el1H2Flow, el1H2InnerPressure, el1H2OuterPressure, el1StackVoltage, el1SystemState, el1WaterPressure, 
+            el1Status, el1Rate, el1ElectrolyteLevel, el1ElectrolyteTemp, el1State, el1H2Flow, el1H2InnerPressure, el1H2OuterPressure, el1StackVoltage, el1StackCurrent, el1SystemState, el1WaterPressure, 
             dr1Status, dr1Temp0, dr1Temp1, dr1Temp2, dr1Temp3, dr1InputPressure, dr1OutputPressure, dr1Warning, 
-            el2Status, el2Rate, el2ElectrolyteLevel, el2ElectrolyteTemp, el2State, el2H2Flow, el2H2InnerPressure, el2H2OuterPressure, el2StackVoltage, el2SystemState, el2WaterPressure,
+            el2Status, el2Rate, el2ElectrolyteLevel, el2ElectrolyteTemp, el2State, el2H2Flow, el2H2InnerPressure, el2H2OuterPressure, el2StackVoltage, el2StackCurrent, el2SystemState, el2WaterPressure,
             dr2Status, dr2Temp0, dr2Temp1, dr2Temp2, dr2Temp3, dr2InputPressure, dr2OutputPressure, dr2Warning,
             fc1State, fc1AnodePressure, fc1FaultFlagA, fc1FaultFlagB, fc1FaultFlagC, fc1FaultFlagD, fc1InletTemp, fc1OutletTemp, fc1OutputPower, fc1OutputCurrent, fc1OutputVoltage,
             fc2State, fc2AnodePressure, fc2FaultFlagA, fc2FaultFlagB, fc2FaultFlagC, fc2FaultFlagD, fc2InletTemp, fc2OutletTemp, fc2OutputPower, fc2OutputCurrent, fc2OutputVoltage,
             gasFuelCellPressure, gasTankPressure,
             totalDissolvedSolids,
             relayGas, relayFuelCell1Enable, relayFuelCell1Run, relayFuelCell2Enable, relayFuelCell2Run, relayEl1Power, relayEl2Power, relayDrain)
-	VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+	VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?,
-	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -1580,9 +1591,9 @@ func logStatus() {
 	       ?, ?, ?, ?, ?, ?, ?, ?);`
 
 	_, err = pDB.Exec(strCommand,
-		params.el1Status, params.el1Rate, params.el1ElectrolyteLevel, params.el1ElectrolyteTemp, params.el1Status, params.el1H2Flow, params.el1H2InnerPressure, params.el1H2OuterPressure, params.el1StackVoltage, params.el1SystemState, params.el1WaterPressure,
+		params.el1Status, params.el1Rate, params.el1ElectrolyteLevel, params.el1ElectrolyteTemp, params.el1Status, params.el1H2Flow, params.el1H2InnerPressure, params.el1H2OuterPressure, params.el1StackVoltage, params.el1StackCurrent, params.el1SystemState, params.el1WaterPressure,
 		params.dr1Status, params.dr1Temp0, params.dr1Temp1, params.dr1Temp2, params.dr1Temp3, params.dr1InputPressure, params.dr1OutputPressure, params.dr1Warning,
-		params.el2Status, params.el2Rate, params.el2ElectrolyteLevel, params.el2ElectrolyteTemp, params.el2Status, params.el2H2Flow, params.el2H2InnerPressure, params.el2H2OuterPressure, params.el2StackVoltage, params.el2SystemState, params.el2WaterPressure,
+		params.el2Status, params.el2Rate, params.el2ElectrolyteLevel, params.el2ElectrolyteTemp, params.el2Status, params.el2H2Flow, params.el2H2InnerPressure, params.el2H2OuterPressure, params.el2StackVoltage, params.el2StackCurrent, params.el2SystemState, params.el2WaterPressure,
 		params.dr2Status, params.dr2Temp0, params.dr2Temp1, params.dr2Temp2, params.dr2Temp3, params.dr2InputPressure, params.dr2OutputPressure, params.dr2Warning,
 		params.fc1State, params.fc1AnodePressure, params.fc1FaultFlagA, params.fc1FaultFlagB, params.fc1FaultFlagC, params.fc1FaultFlagD, params.fc1InletTemp, params.fc1OutletTemp, params.fc1OutputPower, params.fc1OutputCurrent, params.fc1OutputVoltage,
 		params.fc2State, params.fc2AnodePressure, params.fc2FaultFlagA, params.fc2FaultFlagB, params.fc2FaultFlagC, params.fc2FaultFlagD, params.fc2InletTemp, params.fc2OutletTemp, params.fc2OutputPower, params.fc2OutputCurrent, params.fc2OutputVoltage,
@@ -1597,15 +1608,15 @@ func logStatus() {
 	}
 }
 
-func getJsonStatus() string {
-	getSystemStatus()
-	strStatus, err := json.Marshal(&SystemStatus)
-	if err != nil {
-		log.Println(err)
-		return err.Error()
-	}
-	return string(strStatus)
-}
+//func getJsonStatus() string {
+//	getSystemStatus()
+//	strStatus, err := json.Marshal(&SystemStatus)
+//	if err != nil {
+//		log.Println(err)
+//		return err.Error()
+//	}
+//	return string(strStatus)
+//}
 
 func getMinJsonStatus() string {
 	type minElectrolyserStatus struct {
@@ -1660,6 +1671,7 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 		EL1InnerPressure  float64
 		EL1OuterPressure  float64
 		EL1StackVoltage   float64
+		EL1StackCurrent   float64
 		EL1SystemState    string
 		EL1WaterPressure  float64
 		DR1Temp0          float64
@@ -1675,6 +1687,7 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 		EL2InnerPressure  float64
 		EL2OuterPressure  float64
 		EL2StackVoltage   float64
+		EL2StackCurrent   float64
 		EL2SystemState    string
 		EL2WaterPressure  float64
 		DR2Temp0          float64
@@ -1695,26 +1708,32 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	log.Println("From ", from, " to ", to)
 
 	rows, err := pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(AVG(el1Rate) ,0), IFNULL(AVG(el1ElectrolyteTemp) ,0), IFNULL(MAX(el1State) ,''), IFNULL(AVG(el1H2Flow), 0), IFNULL(AVG(el1H2InnerPressure), 0),
-		IFNULL(AVG(el1H2OuterPressure), 0), IFNULL(AVG(el1StackVoltage), 0), IFNULL(MAX(el1SystemState), ''), IFNULL(AVG(el1WaterPressure), 0),
+		IFNULL(AVG(el1H2OuterPressure), 0), IFNULL(AVG(el1StackVoltage), 0), IFNULL(AVG(el1StackCurrent), 0), IFNULL(MAX(el1SystemState), ''), IFNULL(AVG(el1WaterPressure), 0),
 		IFNULL(AVG(dr1Temp0), 0), IFNULL(AVG(dr1Temp1), 0), IFNULL(AVG(dr1Temp2), 0), IFNULL(AVG(dr1Temp3), 0), IFNULL(AVG(dr1InputPressure), 0), IFNULL(AVG(dr1OutputPressure), 0),
 		IFNULL(AVG(el2Rate), 0), IFNULL(AVG(el2ElectrolyteTemp), 0), IFNULL(MAX(el2State), ''), IFNULL(AVG(el2H2Flow), 0), IFNULL(AVG(el2H2InnerPressure), 0),
-		IFNULL(AVG(el2H2OuterPressure), 0), IFNULL(AVG(el2StackVoltage), 0), IFNULL(MAX(el2SystemState), ''), IFNULL(AVG(el2WaterPressure), 0),
+		IFNULL(AVG(el2H2OuterPressure), 0), IFNULL(AVG(el2StackVoltage), 0), IFNULL(AVG(el2StackCurrent), 0), IFNULL(MAX(el2SystemState), ''), IFNULL(AVG(el2WaterPressure), 0),
 		IFNULL(AVG(dr2Temp0), 0), IFNULL(AVG(dr2Temp1), 0), IFNULL(AVG(dr2Temp2), 0), IFNULL(AVG(dr2Temp3), 0), IFNULL(AVG(dr2InputPressure), 0), IFNULL(AVG(dr2OutputPressure), 0),
 		IFNULL(AVG(gasTankPressure), 0)
 	  FROM firefly.logging
 	  WHERE logged BETWEEN ? and ?
 	  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
 	if err != nil {
-		fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
+		if _, err := fmt.Fprintf(w, `{"error":"%s"}`, err.Error()); err != nil {
+			log.Println(err)
+		}
 	}
 
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println(err)
+		}
+	}()
 	for rows.Next() {
 		row := new(Row)
 		if err := rows.Scan(&(row.Logged),
-			&(row.EL1Rate), &(row.EL1Temp), &(row.EL1State), &(row.EL1H2Flow), &(row.EL1InnerPressure), &(row.EL1OuterPressure), &(row.EL1StackVoltage), &(row.EL1SystemState), &(row.EL1WaterPressure),
+			&(row.EL1Rate), &(row.EL1Temp), &(row.EL1State), &(row.EL1H2Flow), &(row.EL1InnerPressure), &(row.EL1OuterPressure), &(row.EL1StackVoltage), &(row.EL1StackCurrent), &(row.EL1SystemState), &(row.EL1WaterPressure),
 			&(row.DR1Temp0), &(row.DR1Temp1), &(row.DR1Temp2), &(row.DR1Temp3), &(row.DR1InputPressure), &(row.DR1OutputPressure),
-			&(row.EL2Rate), &(row.EL2Temp), &(row.EL2State), &(row.EL2H2Flow), &(row.EL2InnerPressure), &(row.EL2OuterPressure), &(row.EL2StackVoltage), &(row.EL2SystemState), &(row.EL2WaterPressure),
+			&(row.EL2Rate), &(row.EL2Temp), &(row.EL2State), &(row.EL2H2Flow), &(row.EL2InnerPressure), &(row.EL2OuterPressure), &(row.EL2StackVoltage), &(row.EL2StackCurrent), &(row.EL2SystemState), &(row.EL2WaterPressure),
 			&(row.DR2Temp0), &(row.DR2Temp1), &(row.DR2Temp2), &(row.DR2Temp3), &(row.DR2InputPressure), &(row.DR2OutputPressure),
 			&(row.H2Pressure)); err != nil {
 			log.Print(err)
@@ -1723,9 +1742,13 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if JSON, err := json.Marshal(results); err != nil {
-		fmt.Fprintf(w, `{"error":"%s"`, err.Error())
+		if _, err := fmt.Fprintf(w, `{"error":"%s"`, err.Error()); err != nil {
+			log.Println(err)
+		}
 	} else {
-		fmt.Fprintf(w, string(JSON))
+		if _, err := fmt.Fprintf(w, string(JSON)); err != nil {
+			log.Println(err)
+		}
 	}
 }
 
@@ -1755,10 +1778,16 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
   WHERE logged BETWEEN ? and ?
   GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
 	if err != nil {
-		fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
+		if _, err := fmt.Fprintf(w, `{"error":"%s"}`, err.Error()); err != nil {
+			log.Println(err)
+		}
 	}
 
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("Error closing query - ", err)
+		}
+	}()
 	for rows.Next() {
 		row := new(Row)
 		if err := rows.Scan(&(row.Logged), &(row.FC1Volts), &(row.FC1Current), &(row.FC1Power),
@@ -1769,9 +1798,13 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if JSON, err := json.Marshal(results); err != nil {
-		fmt.Fprintf(w, `{"error":"%s"`, err.Error())
+		if _, err := fmt.Fprintf(w, `{"error":"%s"`, err.Error()); err != nil {
+			log.Println(err)
+		}
 	} else {
-		fmt.Fprintf(w, string(JSON))
+		if _, err := fmt.Fprintf(w, string(JSON)); err != nil {
+			log.Println(err)
+		}
 	}
 }
 
@@ -2337,7 +2370,7 @@ func init() {
 	flag.StringVar(&databaseLogin, "dbUser", "FireflyService", "Database login user name")
 	flag.StringVar(&databasePassword, "dbPassword", "logger", "Database user password")
 	flag.StringVar(&databasePort, "dbPort", "3306", "Database port")
-	flag.StringVar(&executable, "exec", "./esm-3.17.12", "Path to the FireFly esm executable")
+	flag.StringVar(&executable, "exec", "./esm-3.17.13", "Path to the FireFly esm executable")
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 

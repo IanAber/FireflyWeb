@@ -54,7 +54,8 @@
 
 			device = urlObject.searchParams.get("device");
 
-			if ((device != 1) && (device != 2)) {
+			device = parseInt(device)
+			if ((math.parseInt(device !== 1)) && (device !== 2)) {
 				alert("Invalid device [" + device + "] selected")
 				device = 1;
 			}
@@ -147,6 +148,32 @@
 							step: 1,
 						},
 						minValue: 0,
+						maxValue: 70,
+						description: 'Stack Current Amps',
+						gridLinesColor: '#80D0D0'
+					},
+					series: [{
+						dataField: 'EL1StackCurrent',
+						displayText: 'Current(Amps)',
+						lineColor: '#80D0D0',
+						fillColor: '#80D0D0',
+					}]
+				}, {
+					type: 'spline',
+					valueAxis: {
+						interval: 1,
+						gridLines: {
+							visible: true,
+							step: 1,
+						},
+						labels: {
+							formatSettings: {
+								decimalPlaces: 0,
+							},
+							visible: true,
+							step: 1,
+						},
+						minValue: 0,
 						maxValue: 550,
 						description: 'H2 Flow',
 						gridLinesColor: '#20D020'
@@ -160,26 +187,29 @@
 				}]
 			};
 
-			if (device == 2) {
+			if (device === 2) {
 				currentSettings.title = "Hydrogen Generation Electrolyser 2";
 				currentSettings.seriesGroups[0].series[0].dataField = 'EL2Rate';
 				currentSettings.seriesGroups[1].series[0].dataField = 'EL2Temp';
+				currentSettings.seriesGroups[1].series[0].dataField = 'EL2StackCurrent';
 				currentSettings.seriesGroups[2].series[0].dataField = 'EL2H2Flow';
 			}
 			$('#currentChartContainer').jqxChart(currentSettings);
-			$("#startAt").jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
-			$("#startAt").jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
-			$("#startAt").css("float", "left");
-			$("#endAt").jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
-			$("#endAt").jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
-			$("#endAt").css("float", "left");
+			startAt = $("#startAt");
+			endAt = $("#endAt");
+			startAt.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+			startAt.jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
+			startAt.css("float", "left");
+			endAt.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+			endAt.jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
+			endAt.css("float", "left");
 			getCurrent();
 		});
 
 		function refresh(url) {
 			fetch(url)
 				.then( function(response) {
-					if (response.status == 200) {
+					if (response.status === 200) {
 						response.json()
 							.then(function(data) {
 								end = Math.trunc($("#endAt").jqxDateTimeInput('value') / 1000) + 60;
@@ -196,6 +226,7 @@
 										"EL1InnerPressure":data[data.length - 1].EL1InnerPressure,
 										"EL1OuterPressure":data[data.length - 1].EL1OuterPressure,
 										"EL1StackVoltage":data[data.length - 1].EL1StackVoltage,
+										"EL1StackCurrent":data[data.length - 1].EL1StackCurrent,
 										"EL1SystemState":data[data.length - 1].EL1SystemState,
 										"EL1WaterPressure":data[data.length - 1].EL1WaterPressure,
 
@@ -213,6 +244,7 @@
 										"EL2InnerPressure":data[data.length - 1].EL2InnerPressure,
 										"EL2OuterPressure":data[data.length - 1].EL2OuterPressure,
 										"EL2StackVoltage":data[data.length - 1].EL2StackVoltage,
+										"EL2StackCurrent":data[data.length - 1].EL2StackCurrent,
 										"EL2SystemState":data[data.length - 1].EL2SystemState,
 										"EL2WaterPressure":data[data.length - 1].EL2WaterPressure,
 
@@ -226,8 +258,9 @@
 										"H2Pressure":data[data.length - 1].H2Pressure
 									});
 
-                                            $('#currentChartContainer').jqxChart({'source':data});
-                                            $('#currentChartContainer').jqxChart({'categoryAxis':{
+										currentContainer = $('#currentChartContainer');
+										currentContainer.jqxChart({'source':data});
+										currentContainer.jqxChart({'categoryAxis':{
                                                 dataField: 'Logged',
                                                 showGridLines: false,
                                                 textRotationAngle: 270,
@@ -235,24 +268,24 @@
                                                 formatFunction: xAxisFormatFunction,
                                                 'minValue':start,
                                                 'maxValue':end}});
-                                            $('#currentChartContainer').jqxChart('update');
-                                            $("#waiting").hide();
-                                        }
-                                    });
+										currentContainer.jqxChart('update');
+										$("#waiting").hide();
+									}
+								});
                             }
                         })
                         .catch(function(err) {
-                            if(err.name === "TypeError" && err.message != "cancelled") {
+                            if(err.name === "TypeError" && err.message !== "cancelled") {
                                 alert('Current Fetch Error :-S' + err.message);
                             }
                         });
                         currentTimeOut = setTimeout(getCurrent, 15000);
-                };
+                }
 
                 function getCurrent() {
                     clearTimeout(currentTimeOut);
                     currentTimeOut = 0;
-                    if ($("#timeRange").val() == 0) {
+                    if ($("#timeRange").val() === 0) {
                         $("#customDateTimes").show();
                         $("#waiting").show();
                         refresh(buildURLCustomTimes());
@@ -267,9 +300,9 @@
                 function goBack() {
                     clearTimeout(currentTimeOut);
                     if(history.length > 1) {
-                        setTimeout(window.history.back(), 1000);
+                        setTimeout(window.history.back, 1000);
                     } else {
-                        setTimeout(window.close(), 1000);
+                        setTimeout(window.close, 1000);
                     }
                 }
 </script>
@@ -281,6 +314,7 @@
 				<button onClick="goBack()" style="width:100%">Back</button>&nbsp;
 			</div>
 			<div style="float:left">
+				<label for="timeRange">Span</label>
 				<select id="timeRange" onchange="getCurrent()">
 					<option value=259200000>3 Days</option>
 					<option value=172800000>2 Days</option>
