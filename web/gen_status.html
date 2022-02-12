@@ -13,17 +13,32 @@
     <script type="text/javascript" src="/jqwidgets/jqxdata.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxdraw.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxgauge.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxchart.core.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxbuttons.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxslider.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxchart.core.js"></script>
     <script type="text/javascript">
 
+        var start = new Date();
+        start.setSeconds(0);
+        start.setMinutes(0);
+        start.setHours(0);
+        var end = new Date(start);
+        end.setHours(23);
+        end.setMinutes(59);
+        end.setSeconds(59);
         var bWaiting = false;
         var calibrateInterval = 0;
         var slider1Active = false;
         var slider2Active = false;
         var sliderStartVal = 0;
         var device = 1;
+
+        function buildURL() {
+            end = new Date();
+            start = new Date(end - document.getElementById("timeRange").value);
+            return buildURLForTimes(start, end);
+        }
 
         function enableElectrolyser(nDevice) {
             var xhr = new XMLHttpRequest();
@@ -87,28 +102,6 @@
             xhr.send();
         }
 
-        function gasOn() {
-            var xhr = new XMLHttpRequest();
-            xhr.open('PATCH', window.location.origin + "/gas/on");
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Gas On returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.send();
-        }
-
-        function gasOff(nChannel, time) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('PATCH', window.location.origin + "/gas/off" + nChannel + "/" + time);
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Gas Off returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.send();
-        }
-
         function receiveStatus() {
             var  Data = document.getElementById("Data");
             var url = "ws://" + window.location.host + "/ws";
@@ -135,7 +128,7 @@
                         el1.val(jsonData.Electrolysers[0].Flow);
                     }
                     if (!slider1Active) {
-                        if((jsonData.Electrolysers[0].State == "IDLE") || (jsonData.Electrolysers[0].State == "")) {
+                        if((jsonData.Electrolysers[0].State === "IDLE") || (jsonData.Electrolysers[0].State === "")) {
                             slider1.val(59);
                             slider1.jqxSlider({theme:"orange"})
                         } else {
@@ -143,7 +136,7 @@
                             slider1.jqxSlider({theme:"energyblue"})
                         }
                     }
-                    if ((jsonData.Electrolysers[0].State == "IDLE") || (jsonData.Electrolysers[0].State == "")) {
+                    if ((jsonData.Electrolysers[0].State === "IDLE") || (jsonData.Electrolysers[0].State === "")) {
                         el1Label.text("Electrolyser 1 (Stopped)")
                     } else {
                         el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "%)");
@@ -156,7 +149,7 @@
                     }
 
                     if (!slider2Active) {
-                        if((jsonData.Electrolysers[1].State == "IDLE") || (jsonData.Electrolysers[1].State == "")) {
+                        if((jsonData.Electrolysers[1].State === "IDLE") || (jsonData.Electrolysers[1].State === "")) {
                             slider2.val(59);
                             slider2.jqxSlider({theme:"orange"})
                         } else {
@@ -164,7 +157,7 @@
                             slider2.jqxSlider({theme:"energyblue"})
                         }
                     }
-                    if ((jsonData.Electrolysers[1].State == "IDLE") || (jsonData.Electrolysers[1].State == "")) {
+                    if ((jsonData.Electrolysers[1].State === "IDLE") || (jsonData.Electrolysers[1].State === "")) {
                         el2Label.text("Electrolyser 2 (Stopped)")
                     } else {
                         el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "%)");
@@ -189,7 +182,7 @@
         }
         function Slider1End(event) {
             rate = Math.round(event.args.value)
-            if (rate != sliderStartVal) {
+            if (rate !== sliderStartVal) {
                 setElectrolyserRate(1, rate)
             }
             slider1Active = false;
@@ -202,14 +195,18 @@
 
         function Slider2End(event) {
             rate = Math.round(event.args.value)
-            if (rate != sliderStartVal) {
+            if (rate !== sliderStartVal) {
                 setElectrolyserRate(2, rate)
             }
             slider2Active = false;
         }
 
         function sliderTooltipFormat (value) {
-            return new Number(value).toPrecision(2);
+            if (value === 59) {
+                return "OFF"
+            } else {
+                return value.toFixed();
+            }
         }
 
         function setUpGauges(){
@@ -240,7 +237,7 @@
                 width:"98%",
                 showButtons: false,
                 tooltip:true,
-                tooltipFormatFunction: function(value) {return new Number(value).toPrecision(2);},
+                tooltipFormatFunction: sliderTooltipFormat,
             });
             slider1.on('slideEnd', Slider1End);
             slider1.on('slideStart', Slider1Start);
@@ -272,7 +269,7 @@
                 width:"98%",
                 showButtons: false,
                 tooltip:true,
-                tooltipFormatFunction: function(value) { return new Number(value).toPrecision(2);}
+                tooltipFormatFunction: sliderTooltipFormat,
             });
             slider2.on('slideEnd', Slider2End);
             slider2.on('slideStart', Slider2Start);

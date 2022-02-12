@@ -37,6 +37,7 @@
 			start = new Date(end - document.getElementById("timeRange").value);
 			return buildURLForTimes(start, end);
 		}
+
 		function buildURLCustomTimes() {
 			end = $("#endAt").jqxDateTimeInput('value');
 			start = $("#startAt").jqxDateTimeInput('value');
