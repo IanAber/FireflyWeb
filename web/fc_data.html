@@ -229,7 +229,7 @@
 		function getCurrent() {
 			clearTimeout(currentTimeOut);
 			currentTimeOut = 0;
-			if ($("#timeRange").val() === 0) {
+			if (parseInt($("#timeRange").val()) === 0) {
 				$("#customDateTimes").show();
 				$("#waiting").show();
 				refresh(buildURLCustomTimes());

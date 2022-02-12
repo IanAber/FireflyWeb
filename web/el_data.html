@@ -191,8 +191,8 @@
 				currentSettings.title = "Hydrogen Generation Electrolyser 2";
 				currentSettings.seriesGroups[0].series[0].dataField = 'EL2Rate';
 				currentSettings.seriesGroups[1].series[0].dataField = 'EL2Temp';
-				currentSettings.seriesGroups[1].series[0].dataField = 'EL2StackCurrent';
-				currentSettings.seriesGroups[2].series[0].dataField = 'EL2H2Flow';
+				currentSettings.seriesGroups[2].series[0].dataField = 'EL2StackCurrent';
+				currentSettings.seriesGroups[3].series[0].dataField = 'EL2H2Flow';
 			}
 			$('#currentChartContainer').jqxChart(currentSettings);
 			startAt = $("#startAt");
@@ -285,7 +285,7 @@
                 function getCurrent() {
                     clearTimeout(currentTimeOut);
                     currentTimeOut = 0;
-                    if ($("#timeRange").val() === 0) {
+                    if (parseInt($("#timeRange").val()) === 0) {
                         $("#customDateTimes").show();
                         $("#waiting").show();
                         refresh(buildURLCustomTimes());
