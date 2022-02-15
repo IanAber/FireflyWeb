@@ -17,6 +17,7 @@ import (
 	"io"
 	"log"
 	"log/syslog"
+	"math"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -174,7 +175,7 @@ func connectToDatabase() (*sql.DB, error) {
 	}
 	var sConnectionString = databaseLogin + ":" + databasePassword + "@tcp(" + databaseServer + ":" + databasePort + ")/" + databaseName
 
-	fmt.Println("Connecting to [", sConnectionString, "]")
+	//	fmt.Println("Connecting to [", sConnectionString, "]")
 	db, err := sql.Open("mysql", sConnectionString)
 	if err != nil {
 		return nil, err
@@ -192,7 +193,9 @@ func showElectrolyserProductionRatePage(w http.ResponseWriter, r *http.Request) 
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
 	if (err != nil) || (device > 2) || (device < 1) {
 		log.Print("Invalid electrolyser in reboot request")
-		getStatus(w, r)
+		var jErr JSONError
+		jErr.AddErrorString("electrolyser", "Invalid electrolyser in reboot request")
+		jErr.ReturnError(w, 400)
 		return
 	}
 	currentRate := SystemStatus.Electrolysers[device-1].CurrentProductionRate
@@ -310,33 +313,6 @@ func populateGasData(text string) {
 	}
 	return
 }
-
-/*
-func populateGasData(text string) (status *gasStatus) {
-	valueLines := getKeyValueLines(text, ": ")
-	if len(valueLines) > 0 {
-		status = new(gasStatus)
-		for _, valueLine := range valueLines {
-			keyValue := strings.Split(valueLine, ":")
-			if len(keyValue) < 2 {
-				return
-			}
-			key := strings.Trim(keyValue[0], " ")
-			value := strings.Trim(keyValue[1], " ")
-			//			fmt.Println("Key =", key, "\nValue = ", value, "\nNumeric = ", strings.TrimFunc(value, notNumeric))
-			switch key {
-			case "Fuel Cell pressure":
-				status.FuelCellPressure, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 64)
-				status.FuelCellPressure /= convertPSIToBar
-			case "Tank pressure":
-				status.TankPressure, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 64)
-				status.TankPressure /= convertPSIToBar
-			}
-		}
-	}
-	return
-}
-*/
 
 func isOn(val string) bool {
 	if strings.Contains(val, "ON") {
@@ -1704,9 +1680,6 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	from := vars["from"]
 	to := vars["to"]
-
-	log.Println("From ", from, " to ", to)
-
 	rows, err := pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(AVG(el1Rate) ,0), IFNULL(AVG(el1ElectrolyteTemp) ,0), IFNULL(MAX(el1State) ,''), IFNULL(AVG(el1H2Flow), 0), IFNULL(AVG(el1H2InnerPressure), 0),
 		IFNULL(AVG(el1H2OuterPressure), 0), IFNULL(AVG(el1StackVoltage), 0), IFNULL(AVG(el1StackCurrent), 0), IFNULL(MAX(el1SystemState), ''), IFNULL(AVG(el1WaterPressure), 0),
 		IFNULL(AVG(dr1Temp0), 0), IFNULL(AVG(dr1Temp1), 0), IFNULL(AVG(dr1Temp2), 0), IFNULL(AVG(dr1Temp3), 0), IFNULL(AVG(dr1InputPressure), 0), IFNULL(AVG(dr1OutputPressure), 0),
@@ -1718,9 +1691,9 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	  WHERE logged BETWEEN ? and ?
 	  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
 	if err != nil {
-		if _, err := fmt.Fprintf(w, `{"error":"%s"}`, err.Error()); err != nil {
-			log.Println(err)
-		}
+		var jErr JSONError
+		jErr.AddError("database", err)
+		jErr.ReturnError(w, 500)
 	}
 
 	defer func() {
@@ -2310,6 +2283,119 @@ func startDataWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func setElectrolyserRatePercent(rate uint8, device uint8) error {
+	if rate > 0 {
+		if SystemStatus.Electrolysers[device-1].ElState == ElIdle {
+			log.Println("Starting Electrolyser ", device)
+			strCommand := fmt.Sprintf("el start %d", device-1)
+			_, err := sendCommand(strCommand)
+			if err != nil {
+				log.Print(err)
+				return err
+			}
+		}
+		strCommand := fmt.Sprintf("el set %d pr %d", device-1, rate)
+		_, err := sendCommand(strCommand)
+		if err != nil {
+			log.Print(err)
+			return err
+		}
+	} else {
+		strCommand := fmt.Sprintf("el stop %d", device-1)
+		_, err := sendCommand(strCommand)
+		if err != nil {
+			log.Print(err)
+			return err
+		}
+	}
+	return nil
+}
+
+func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Print(err)
+		var jErr JSONError
+		jErr.AddError("electrolyser", err)
+		jErr.ReturnError(w, 500)
+		return
+	}
+	var jRate struct {
+		Rate int64 `json:"rate"`
+	}
+	if err = json.Unmarshal(body, &jRate); err != nil {
+		log.Println(err)
+		return
+	}
+
+	// Return bad request if outside acceptable range of 0..100%
+	if jRate.Rate > 100 || jRate.Rate < 0 {
+		var jErr JSONError
+		jErr.AddErrorString("electrolyser", "Rate must be between 0 and 100")
+		jErr.ReturnError(w, 400)
+		return
+	}
+
+	var el1, el2 uint8
+
+	ratePercent := uint8((jRate.Rate * 122) / 100)
+	switch {
+	case ratePercent == 0:
+		el1 = 0
+		el2 = 0
+	case ratePercent < 42:
+		el1 = ratePercent + 59
+		el2 = 0
+	case ratePercent < 83:
+		el1 = ratePercent + 18
+		el2 = 60
+	default:
+		el1 = 100
+		el2 = ratePercent - 22
+	}
+
+	log.Println("Set Electrolyser 1 to ", el1)
+	err = setElectrolyserRatePercent(el1, 1)
+	var jError JSONError
+	if err != nil {
+		jError.AddError("el1", err)
+	}
+	log.Println("Set Electrolyser 2 to ", el2)
+	err = setElectrolyserRatePercent(el2, 2)
+	if err != nil {
+		jError.AddError("el2", err)
+	}
+	if len(jError.Errors) > 0 {
+		jError.ReturnError(w, 500)
+	}
+}
+
+func getElectrolyserRate(w http.ResponseWriter, _ *http.Request) {
+
+	var el1, el2 float64
+
+	if SystemStatus.Electrolysers[0].ElState == ElIdle {
+		el1 = 0.0
+	} else {
+		el1 = float64(SystemStatus.Electrolysers[0].CurrentProductionRate)
+	}
+	if SystemStatus.Electrolysers[1].ElState == ElIdle {
+		el2 = 0
+	} else {
+		el2 = float64(SystemStatus.Electrolysers[1].CurrentProductionRate)
+	}
+	rate := 0.0
+	if el1+el2 > 0 {
+		// ROUND((((A3+B3)-59)/14)*9.9, 0)
+		rate = math.Round((((el1 + el2) - 59) / 14) * 9.9)
+	}
+	if _, err := fmt.Fprintf(w, `{"rate":%d}`, int8(rate)); err != nil {
+		var jErr JSONError
+		jErr.AddError("Electrolyser", err)
+		jErr.ReturnError(w, 500)
+	}
+}
+
 func setUpWebSite() {
 	router := mux.NewRouter().StrictSlash(true)
 	router.HandleFunc("/ws", startDataWebSocket).Methods("GET")
@@ -2333,6 +2419,8 @@ func setUpWebSite() {
 	router.HandleFunc("/minStatus", getMinHtmlStatus).Methods("GET")
 	router.HandleFunc("/fcdata/{from}/{to}", getFuelCellHistory).Methods("GET")
 	router.HandleFunc("/eldata/{from}/{to}", getElectrolyserHistory).Methods("GET")
+	router.HandleFunc("/el/setrate", setElectrolyserRate).Methods("POST")
+	router.HandleFunc("/el/getRate", getElectrolyserRate).Methods("GET")
 
 	fileServer := http.FileServer(neuteredFileSystem{http.Dir("./web")})
 	router.PathPrefix("/").Handler(http.StripPrefix("/", fileServer))
@@ -2418,12 +2506,19 @@ func main() {
 	log.Println("FireflyWeb Starting with ", systemConfig.NumFc, " Fuelcells : ", systemConfig.NumEl, " Electrolysers : ", systemConfig.NumDryer, " Dryers")
 	signal = sync.NewCond(&sync.Mutex{})
 
+	loops := 0
 	for {
-		getSystemStatus()
-		if SystemStatus.valid {
-			logStatus()
+		if loops == 0 {
+			getSystemStatus()
+			if SystemStatus.valid {
+				logStatus()
+			}
 		}
 		signal.Broadcast()
 		time.Sleep(time.Second)
+		loops++
+		if loops >= 10 {
+			loops = 0
+		}
 	}
 }
