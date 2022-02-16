@@ -30,6 +30,7 @@ import (
 
 const convertPSIToBar = 14.503773773
 const ElIdle = "EL_STATE_IDLE"
+const ElStandby = "EL_STATE_STAND_BY"
 const redirectToMainMenuScript = `
 <script>
 	var tID = setTimeout(function () {
@@ -2354,13 +2355,11 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 		el2 = ratePercent - 22
 	}
 
-	log.Println("Set Electrolyser 1 to ", el1)
 	err = setElectrolyserRatePercent(el1, 1)
 	var jError JSONError
 	if err != nil {
 		jError.AddError("el1", err)
 	}
-	log.Println("Set Electrolyser 2 to ", el2)
 	err = setElectrolyserRatePercent(el2, 2)
 	if err != nil {
 		jError.AddError("el2", err)
@@ -2374,12 +2373,12 @@ func getElectrolyserRate(w http.ResponseWriter, _ *http.Request) {
 
 	var el1, el2 float64
 
-	if SystemStatus.Electrolysers[0].ElState == ElIdle {
+	if (SystemStatus.Electrolysers[0].ElState == ElIdle) || (SystemStatus.Electrolysers[0].ElState == ElStandby) {
 		el1 = 0.0
 	} else {
 		el1 = float64(SystemStatus.Electrolysers[0].CurrentProductionRate)
 	}
-	if SystemStatus.Electrolysers[1].ElState == ElIdle {
+	if (SystemStatus.Electrolysers[1].ElState == ElIdle) || (SystemStatus.Electrolysers[1].ElState == ElStandby) {
 		el2 = 0
 	} else {
 		el2 = float64(SystemStatus.Electrolysers[1].CurrentProductionRate)
