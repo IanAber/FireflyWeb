@@ -138,6 +138,7 @@ var (
 		Gas           gasStatus
 		TDS           tdsStatus
 	}
+	ElectrolyserOnOffTimes [2]time.Time
 )
 
 var systemConfig struct {
@@ -2287,12 +2288,14 @@ func startDataWebSocket(w http.ResponseWriter, r *http.Request) {
 func setElectrolyserRatePercent(rate uint8, device uint8) error {
 	if rate > 0 {
 		if SystemStatus.Electrolysers[device-1].ElState == ElIdle {
-			log.Println("Starting Electrolyser ", device)
-			strCommand := fmt.Sprintf("el start %d", device-1)
-			_, err := sendCommand(strCommand)
-			if err != nil {
-				log.Print(err)
-				return err
+			if time.Now().After(ElectrolyserOnOffTimes[device-1].Add(time.Minute * 10)) {
+				strCommand := fmt.Sprintf("el start %d", device-1)
+				ElectrolyserOnOffTimes[device-1] = time.Now()
+				_, err := sendCommand(strCommand)
+				if err != nil {
+					log.Print(err)
+					return err
+				}
 			}
 		}
 		strCommand := fmt.Sprintf("el set %d pr %d", device-1, rate)
@@ -2302,11 +2305,14 @@ func setElectrolyserRatePercent(rate uint8, device uint8) error {
 			return err
 		}
 	} else {
-		strCommand := fmt.Sprintf("el stop %d", device-1)
-		_, err := sendCommand(strCommand)
-		if err != nil {
-			log.Print(err)
-			return err
+		if time.Now().After(ElectrolyserOnOffTimes[device-1].Add(time.Minute * 10)) {
+			strCommand := fmt.Sprintf("el stop %d", device-1)
+			_, err := sendCommand(strCommand)
+			ElectrolyserOnOffTimes[device-1] = time.Now()
+			if err != nil {
+				log.Print(err)
+				return err
+			}
 		}
 	}
 	return nil
@@ -2450,6 +2456,9 @@ func init() {
 	if e == nil {
 		log.SetOutput(logwriter)
 	}
+
+	ElectrolyserOnOffTimes[0] = time.Now()
+	ElectrolyserOnOffTimes[1] = time.Now()
 
 	// Get the settings
 	flag.StringVar(&databaseServer, "sqlServer", "localhost", "MySQL Server")
