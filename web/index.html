@@ -3,6 +3,9 @@
     <head>
         <meta charset="UTF-8">
         <title>Firefly System</title>
+        <script type="text/javascript" src="/scripts/jquery-3.6.0.min.js"></script>
+        <script type="text/javascript" src="scripts/jquery-ui.js"></script>
+        <link rel="stylesheet" type="text/css" href="css/jquery-ui.min.css">
         <style>
             li.status {
                 padding-bottom:25px
@@ -11,6 +14,123 @@
                 padding-bottom:5px
             }
         </style>
+        <script type="text/javascript">
+            function ElectrolyserOn(device) {
+                fetch("/el/" + device + "/on")
+                .then( function(response) {
+                    if (response.status === 200) {
+                        alert ("Electrolyser is now ON");
+                    } else {
+                        alert ("Failed to turn the electrolyser on");
+                    }
+                    setTimeout(FetchRelays, 2000);
+                })
+            }
+            function ElectrolyserOff(device) {
+                fetch("/el/" + device + "/off")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Electrolyser is now OFF");
+                        } else {
+                            alert ("Failed to turn the electrolyser off");
+                        }
+                        setTimeout(FetchRelays, 2000);
+                    })
+            }
+            function FetchRelays() {
+                fetch("/system")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            response.json()
+                                .then(function(data) {
+                                    if (data.NumElectrolyser > 0) {
+                                        if (data.Relays.Electrolyser1) {
+                                            $('#el1On').hide();
+                                            $('#el1Off').show();
+                                        } else {
+                                            $('#el1On').show();
+                                            $('#el1Off').hide();
+                                        }
+                                    } else {
+                                        $('#el1On').hide();
+                                        $('#el1Off').hide();
+                                    }
+                                    if (data.NumElectrolyser > 1) {
+                                        if (data.Relays.Electrolyser2) {
+                                            $('#el2On').hide();
+                                            $('#el2Off').show();
+                                        } else {
+                                            $('#el2On').show();
+                                            $('#el2Off').hide();
+                                        }
+                                    } else {
+                                        $('#el2On').hide();
+                                        $('#el2Off').hide();
+                                    }
+                                    if (data.NumFuelCell > 0) {
+                                        if (data.Relays.FuelCell1Enable) {
+                                            $('#fc1On').hide();
+                                            $('#fc1Off').show();
+                                        } else {
+                                            $('#fc1On').show();
+                                            $('#fc1Off').hide();
+                                        }
+                                        if (data.Relays.FuelCell1Run) {
+                                            $('#fc1Run').hide();
+                                            $('#fc1Stop').show();
+                                        } else {
+                                            $('#fc1Run').show();
+                                            $('#fc1Stop').hide();
+                                        }
+                                    } else {
+                                        $('#fc1On').hide();
+                                        $('#fc1Off').hide();
+                                        $('#fc1Run').hide();
+                                        $('#fc1Stop').hide();
+                                    }
+
+                                    if (data.NumFuelCell > 1) {
+                                        if (data.Relays.FuelCell2Enable) {
+                                            $('#fc2On').hide();
+                                            $('#fc2Off').show();
+                                        } else {
+                                            $('#fc2On').show();
+                                            $('#fc2Off').hide();
+                                        }
+                                        if (data.Relays.FuelCell1Run) {
+                                            $('#fc2Run').hide();
+                                            $('#fc2Stop').show();
+                                        } else {
+                                            $('#fc2Run').show();
+                                            $('#fc2Stop').hide();
+                                        }
+                                    } else {
+                                        $('#fc2On').hide();
+                                        $('#fc2Off').hide();
+                                        $('#fc2Run').hide();
+                                        $('#fc2Stop').hide();
+                                    }
+
+                                    if (data.Relays.GasToFuelCell) {
+                                        $('#gasOn').hide();
+                                        $('#gasOff').show();
+                                    } else {
+                                        $('#gasOn').show();
+                                        $('#gasOff').hide();
+                                    }
+
+                                    if (data.Relays.Drain) {
+                                        $('#drainOn').hide();
+                                        $('#drainOff').show();
+                                    } else {
+                                        $('#drainOn').show();
+                                        $('#drainOff').hide();
+                                    }
+                                })
+                        }
+                    })
+            }
+        </script>
     </head>
     <body>
         <h1>Firefly System</h1><br />
@@ -18,22 +138,26 @@
             <li class="status"><a href="/gen_status.html">Hydrogen Generation</a></li>
             <li class="status"><a href="/fc_status.html">Fuel Cell Operation</a></li>
             <li class="status"><a href="/status">Get Status</a></li>
-            <li class="operation"><a href="/el/1/on">Turn Electrolyser 1 On</a></li>
-            <li class="operation"><a href="/el/1/off">Turn Electrolyser 1 Off</a></li>
-            <li class="operation"><a href="/el/2/on">Turn Electrolyser 2 On</a></li>
-            <li class="operation"><a href="/el/2/off">Turn Electrolyser 2 Off</a></li>
-            <li class="operation"><a href="/fc/1/on">Turn Fuel Cell On</a></li>
-            <li class="operation"><a href="/fc/1/off">Turn Fuel Cell Off</a></li>
-            <li class="operation"><a href="/gas/on">Turn the Gas to the Fuel Cell on.</a></li>
-            <li class="operation"><a href="/gas/off">Turn the Gas to the Fuel Cell off.</a><br /></li>
-            <li class="operation"><a href="/el/1/start">Start Electrolyser 1</a></li>
-            <li class="operation"><a href="/el/1/stop">Stop Electrolyser 1</a></li>
-            <li class="operation"><a href="/el/2/start">Start Electrolyser 2</a></li>
-            <li class="operation"><a href="/el/2/stop">Stop Electrolyser 2</a><br /></li>
-            <li class="operation"><a href="/fc/1/run">Start Fuel Cell</a></li>
-            <li class="operation"><a href="/fc/1/stop">Stop Fuel Cell</a><br /></li>
-            <li class="operation"><a href="/el/1/setRate">Set Electrolyser 1 Production Rate</a></li>
-            <li class="operation"><a href="/el/2/setRate">Set Electrolyser 2 Production Rate</a></li>
+            <li class="operation" id="el1On"><a href="#" onclick="ElectrolyserOn(1)">Turn Electrolyser 1 On</a></li>
+            <li class="operation" id="el1Off"><a href="#" onclick="ElectrolyserOff(1)">Turn Electrolyser 1 Off</a></li>
+            <li class="operation" id="el2On"><a href="#" onclick="ElectrolyserOn(2)">Turn Electrolyser 2 On</a></li>
+            <li class="operation" id="el2Off"><a href="#" onclick="ElectrolyserOff(2)">Turn Electrolyser 2 Off</a></li>
+            <li class="operation" id="fc1On"><a href="/fc/1/on">Turn Fuel Cell On</a></li>
+            <li class="operation" id="fc1Off"><a href="/fc/1/off">Turn Fuel Cell Off</a></li>
+            <li class="operation" id="fc2On"><a href="/fc/2/on">Turn Fuel Cell On</a></li>
+            <li class="operation" id="fc2Off"><a href="/fc/2/off">Turn Fuel Cell Off</a></li>
+            <li class="operation" id="fc1Run"><a href="/fc/1/run">Start Fuel Cell</a></li>
+            <li class="operation" id="fc1Stop"><a href="/fc/1/stop">Stop Fuel Cell</a><br /></li>
+            <li class="operation" id="fc2Run"><a href="/fc/2/run">Start Fuel Cell</a></li>
+            <li class="operation" id="fc2Stop"><a href="/fc/2/stop">Stop Fuel Cell</a><br /></li>
+            <li class="operation" id="gasOn"><a href="/gas/on">Turn the Gas to the Fuel Cell on.</a></li>
+            <li class="operation" id="gasOff"><a href="/gas/off">Turn the Gas to the Fuel Cell off.</a><br /></li>
+            <li class="operation" id="drainOn"><a href="/drain/on">Turn the Drain on.</a></li>
+            <li class="operation" id="drainOff"><a href="/drain/off">Turn the Drain off.</a><br /></li>
+
         </ul>
     </body>
 </html>
+<script type="text/javascript">
+    FetchRelays();
+</script>

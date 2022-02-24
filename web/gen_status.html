@@ -122,46 +122,59 @@
             conn.onmessage = function(evt) {
                 try{
                     jsonData = JSON.parse(evt.data);
-                    if(el1.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
-                        sCaption = jsonData.Electrolysers[0].Flow.toFixed(1) + " NL/Hour";
-                        el1.jqxGauge({caption:{value:sCaption}});
-                        el1.val(jsonData.Electrolysers[0].Flow);
-                    }
-                    if (!slider1Active) {
-                        if((jsonData.Electrolysers[0].State === "IDLE") || (jsonData.Electrolysers[0].State === "")) {
-                            slider1.val(59);
-                            slider1.jqxSlider({theme:"orange"})
-                        } else {
-                            slider1.val(jsonData.Electrolysers[0].Rate);
-                            slider1.jqxSlider({theme:"energyblue"})
+                    if (jsonData.Electrolysers[0].On) {
+                        $("#el1").css({display:"unset"})
+                        $("#el1_on").css({display:"none"})
+                        if(el1.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
+                            sCaption = jsonData.Electrolysers[0].Flow.toFixed(1) + " NL/Hour";
+                            el1.jqxGauge({caption:{value:sCaption}});
+                            el1.val(jsonData.Electrolysers[0].Flow);
                         }
-                    }
-                    if ((jsonData.Electrolysers[0].State === "IDLE") || (jsonData.Electrolysers[0].State === "")) {
-                        el1Label.text("Electrolyser 1 (Stopped)")
+                        if (!slider1Active) {
+                            if (jsonData.Electrolysers[0].State === "Idle") {
+                                slider1.val(59);
+                            } else {
+                                slider1.val(jsonData.Electrolysers[0].Rate);
+                            }
+                            if(jsonData.Electrolysers[0].State !== "Steady") {
+                                slider1.jqxSlider({theme:"orange"})
+                            } else {
+                                slider1.jqxSlider({theme:"energyblue"})
+                            }
+                        }
+                        el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
                     } else {
-                        el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "%)");
+                        $("#el1").css({display:"none"})
+                        $("#el1_on").css({display:"unset"})
+                    }
+                    if(jsonData.Electrolysers[1].On) {
+                        $("#el2").css({display:"unset"})
+                        $("#el2_on").css({display:"none"})
+                        if(el2.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
+                            sCaption = jsonData.Electrolysers[1].Flow.toFixed(1) + " NL/Hour";
+                            el2.jqxGauge({caption:{value:sCaption}});
+                            el2.val(jsonData.Electrolysers[1].Flow);
+                        }
+
+                        if (!slider2Active) {
+                            if (jsonData.Electrolysers[1].State === "Idle") {
+                                slider2.val(59);
+                            } else {
+                                slider2.val(jsonData.Electrolysers[1].Rate);
+                            }
+                            if(jsonData.Electrolysers[1].State !== "Steady") {
+                                slider2.jqxSlider({theme:"orange"})
+                            } else {
+                                slider2.jqxSlider({theme:"energyblue"})
+                            }
+                        }
+                        el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
+                    } else {
+                        $("#el2").css({display:"none"})
+                        $("#el2_on").css({display:"unset"})
+
                     }
 
-                    if(el2.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
-                        sCaption = jsonData.Electrolysers[1].Flow.toFixed(1) + " NL/Hour";
-                        el2.jqxGauge({caption:{value:sCaption}});
-                        el2.val(jsonData.Electrolysers[1].Flow);
-                    }
-
-                    if (!slider2Active) {
-                        if((jsonData.Electrolysers[1].State === "IDLE") || (jsonData.Electrolysers[1].State === "")) {
-                            slider2.val(59);
-                            slider2.jqxSlider({theme:"orange"})
-                        } else {
-                            slider2.val(jsonData.Electrolysers[1].Rate);
-                            slider2.jqxSlider({theme:"energyblue"})
-                        }
-                    }
-                    if ((jsonData.Electrolysers[1].State === "IDLE") || (jsonData.Electrolysers[1].State === "")) {
-                        el2Label.text("Electrolyser 2 (Stopped)")
-                    } else {
-                        el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "%)");
-                    }
 
                     if(tank.jqxLinearGauge('value') !== jsonData.Gas) {
                         sCaption = jsonData.Gas.toFixed(1) + " bar";
@@ -299,7 +312,7 @@
 </head>
 <body>
 <div class="gauge_row">
-    <div class="dial_gauge">
+    <div class="dial_gauge" id="el1" style="display:unset">
         <div class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=1')">
             <div id='Electrolyser1' style="width:49vw"></div><br />
         </div>
@@ -308,7 +321,10 @@
             <h2 id="electrolyser1Label" style="text-align:center">Electrolyser 1</h2>
         </div>
     </div>
-    <div class="dial_gauge">
+    <div class="dial_gauge" id="el1_off" style="display:none">
+        <h1>Electrolyer 1 is switched off</h1>
+    </div>
+    <div class="dial_gauge" id="el2" style="display:unset">
         <div class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=2')">
             <div id='Electrolyser2' style="width:49vw"></div><br />
         </div>
@@ -316,6 +332,9 @@
             <div id="Electrolyser2Slider"></div>
             <h2 id="electrolyser2Label" style="text-align:center">Electrolyser 2</h2>
         </div>
+    </div>
+    <div class="dial_gauge" id="el2_on" style="display:none">
+        <h1>Electrolyer 2 is switched off</h1>
     </div>
     <div class="linear_gauge" style="left:0">
         <div class="linear_gauge_pressure" onclick="window.open('h2_data.html')">
