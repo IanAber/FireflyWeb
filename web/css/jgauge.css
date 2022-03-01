@@ -4,26 +4,25 @@
 */
 
 div.gauge_row {
-    overflow:auto;
     width:100%;
 }
 div.dial_gauge {
     position:static;
     float:left;
-    width:40%;
+    width:50%;
     overflow:auto;
 }
 
 div.dial_gauge_electrolyser {
-    width:39vw;
-    height:39vw;
     position:static;
     margin:0 auto;
+    width:39vw;
+    height:39vh
 }
 
 div.dial_gauge_fuelcell {
     width:39vw;
-    height:39vw;
+    height:39vh;
     position:static;
     margin:0 auto;
 }
@@ -42,14 +41,15 @@ div.calibrate_select {
 div.linear_gauge {
     position:static;
     float:left;
-    width:15vw;
-    overflow:auto;
-    margin:0 auto;
+    width:10vw;
+    overflow:none;
+    margin:0;
+    height:100%;
 }
 
 div.linear_gauge_pressure {
     position:static;
-    height:40vw;
+    height:85vh;
     margin:0 auto;
 }
 

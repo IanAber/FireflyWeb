@@ -66,6 +66,7 @@
     <inspection_tool class="EditorConfigValueCorrectness" enabled="false" level="ERROR" enabled_by_default="false" />
     <inspection_tool class="EditorConfigValueUniqueness" enabled="false" level="ERROR" enabled_by_default="false" />
     <inspection_tool class="EditorConfigWildcardRedundancy" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="HtmlUnknownTarget" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="InjectedReferences" enabled="false" level="ERROR" enabled_by_default="false" />
     <inspection_tool class="JSUnusedAssignment" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="JSUnusedGlobalSymbols" enabled="false" level="WARNING" enabled_by_default="false" />

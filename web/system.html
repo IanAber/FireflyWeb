@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>Firefly Electrolyser Status</title>
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.base.css" type="text/css" />
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.energyblue.css" type="text/css" />
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.orange.css" type="text/css" />
+    <link rel="stylesheet" href="css/jgauge.css" type="text/css" />
+    <script type="text/javascript" src="/scripts/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="scripts/jquery-ui.js"></script>
+    <link rel="stylesheet" type="text/css" href="css/jquery-ui.min.css">
+    <script type="text/javascript" src="/jqwidgets/jqxcore.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdata.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdraw.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxgauge.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxchart.core.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxbuttons.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxslider.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxchart.core.js"></script>
+    <script type="text/javascript">
+
+        var start = new Date();
+        start.setSeconds(0);
+        start.setMinutes(0);
+        start.setHours(0);
+        var end = new Date(start);
+        end.setHours(23);
+        end.setMinutes(59);
+        end.setSeconds(59);
+        var bWaiting = false;
+        var calibrateInterval = 0;
+        var slider1Active = false;
+        var slider2Active = false;
+        var sliderStartVal = 0;
+        var device = 1;
+
+        function buildURL() {
+            end = new Date();
+            start = new Date(end - document.getElementById("timeRange").value);
+            return buildURLForTimes(start, end);
+        }
+
+        function enableElectrolyser(nDevice) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/on");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function disableElectrolyser(nDevice) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "el/" + nDevice + "/off");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Disable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function setElectrolyserRate(nDevice , rate ) {
+            var xhr = new XMLHttpRequest();
+            if (rate < 60) {
+                rate = 0;
+                if (!confirm("Are you sure you want to stop this electrolyser?")) {
+                    return;
+                }
+            }
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/rate");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Set Rate returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); // Header
+            xhr.send("rate=" + rate);
+        }
+
+        function startElectrolyser(nDevice) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/start");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function stopElectrolyser(nDevice) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/stop");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function receiveStatus() {
+            var  Data = document.getElementById("Data");
+            var url = "ws://" + window.location.host + "/ws";
+            var conn = new WebSocket(url);
+            el1 = $("#Electrolyser1");
+            el2 = $("#Electrolyser2");
+            tank = $("#TankPressure");
+            fc1 = $('#FuelCell1');
+            fc2 = $('#FuelCell2');
+            fc1Label = $("#FuelCell1Label");
+            fc2Label = $("#FuelCell2Label");
+            tankLabel = $("#tankPressureLabel");
+            slider1 = $("#Electrolyser1Slider");
+            slider2 = $("#Electrolyser2Slider");
+            el1Label = $("#electrolyser1Label");
+            el2Label = $("#electrolyser2Label");
+            conn.onclose = function() {
+                Data.textContent = 'Connection closed';
+                el1.jqxGauge({caption:{value:"Connection Closed"}});
+                el2.jqxGauge({caption:{value:"Connection Closed"}});
+            }
+            conn.onmessage = function(evt) {
+                try{
+                    jsonData = JSON.parse(evt.data);
+                    if (jsonData.Electrolysers[0].On) {
+                        $("#el1").css({display:"unset"})
+                        $("#el1_on").css({display:"none"})
+                        if(el1.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
+                            sCaption = jsonData.Electrolysers[0].Flow.toFixed(1) + " NL/Hour";
+                            el1.jqxGauge({caption:{value:sCaption}});
+                            el1.val(jsonData.Electrolysers[0].Flow);
+                        }
+                        if (!slider1Active) {
+                            if (jsonData.Electrolysers[0].State === "Idle") {
+                                slider1.val(59);
+                            } else {
+                                slider1.val(jsonData.Electrolysers[0].Rate);
+                            }
+                            if(jsonData.Electrolysers[0].State !== "Steady") {
+                                slider1.jqxSlider({theme:"orange"})
+                            } else {
+                                slider1.jqxSlider({theme:"energyblue"})
+                            }
+                        }
+                        el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
+                    } else {
+                        $("#el1").css({display:"none"})
+                        $("#el1_on").css({display:"unset"})
+                    }
+                    if(jsonData.Electrolysers[1].On) {
+                        $("#el2").css({display:"unset"})
+                        $("#el2_on").css({display:"none"})
+                        if(el2.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
+                            sCaption = jsonData.Electrolysers[1].Flow.toFixed(1) + " NL/Hour";
+                            el2.jqxGauge({caption:{value:sCaption}});
+                            el2.val(jsonData.Electrolysers[1].Flow);
+                        }
+
+                        if (!slider2Active) {
+                            if (jsonData.Electrolysers[1].State === "Idle") {
+                                slider2.val(59);
+                            } else {
+                                slider2.val(jsonData.Electrolysers[1].Rate);
+                            }
+                            if(jsonData.Electrolysers[1].State !== "Steady") {
+                                slider2.jqxSlider({theme:"orange"})
+                            } else {
+                                slider2.jqxSlider({theme:"energyblue"})
+                            }
+                        }
+                        el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
+                    } else {
+                        $("#el2").css({display:"none"})
+                        $("#el2_on").css({display:"unset"})
+
+                    }
+
+                    if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 0)) {
+                        if(fc1.jqxGauge('value') !== jsonData.FuelCells[0].Output) {
+                            fc1.show();
+                            sCaption = jsonData.FuelCells[0].Output.toFixed(0) + " Watts";
+                            fc1.jqxGauge({caption:{value:sCaption}});
+                            fc1.val(jsonData.FuelCells[0].Output);
+                        }
+                        if ((jsonData.FuelCells[0].State === "Switched Off") || (jsonData.FuelCells[0].State === "")) {
+                            fc1Label.text("Fuel Cell 1 (OFF)")
+                        } else {
+                            fc1Label.text("Fuel Cell 1 (" + jsonData.FuelCells[0].Output.toFixed(0) + " Watts)");
+                        }
+                    } else {
+                        $("#fc1").css("display","none");
+                    }
+
+                    if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 1)) {
+                        if(fc2.jqxGauge('value') !== jsonData.FuelCells[1].Output) {
+                            fc2.show();
+                            sCaption = jsonData.FuelCells[1].Output.toFixed(0) + " Watts";
+                            fc2.jqxGauge({caption:{value:sCaption}});
+                            fc2.val(jsonData.Electrolysers[1].Output);
+                        }
+                        if ((jsonData.FuelCells[1].State === "Switched Off") || (jsonData.FuelCells[1].State === "")) {
+                            el2Label.text("Fuel Cell 2 (OFF)")
+                        } else {
+                            el2Label.text("Fuel Cell 2 (" + jsonData.FuelCells[1].Output.toFixed(0) + " Watts)");
+                        }
+                    } else {
+                        $("#fc2").css("display","none");
+                    }
+
+                    if(tank.jqxLinearGauge('value') !== jsonData.Gas) {
+                        sCaption = jsonData.Gas.toFixed(1) + " bar";
+//                        tank.jqxLinearGauge({caption:{value:sCaption}});
+                        tank.val(jsonData.Gas);
+                        tankLabel.text("H2 (" + Math.round(jsonData.Gas * 10) / 10 + " bar)");
+                    }
+
+                } catch (e) {
+                    console.log (e + "\r\nData = " + evt.data);
+                }
+            }
+        }
+
+        function Slider1Start(event) {
+            slider1Active = true;
+            sliderStartVal = $("#Electrolyser1Slider").val()
+        }
+        function Slider1End(event) {
+            rate = Math.round(event.args.value)
+            if (rate !== sliderStartVal) {
+                setElectrolyserRate(1, rate)
+            }
+            slider1Active = false;
+        }
+
+        function Slider2Start(event) {
+            slider2Active = true;
+            sliderStartVal = $("#Electrolyser2Slider").val()
+        }
+
+        function Slider2End(event) {
+            rate = Math.round(event.args.value)
+            if (rate !== sliderStartVal) {
+                setElectrolyserRate(2, rate)
+            }
+            slider2Active = false;
+        }
+
+        function sliderTooltipFormat (value) {
+            if (value === 59) {
+                return "OFF"
+            } else {
+                return value.toFixed();
+            }
+        }
+
+        function setUpGauges(){
+            el1 = $('#Electrolyser1Container')
+            el2 = $('#Electrolyser2Container')
+            fc1 = $('#FuelCell1Container')
+            fc2 = $('#FuelCell2Container')
+            $('#Electrolyser1').jqxGauge({
+                ticksMinor: {interval: 10, size: '5%'},
+                ticksMajor: {interval: 50,size: '9%'},
+                max: 550,
+                min: 0,
+                labels: {interval: 50},
+                value: 0,
+                radius: '50%',
+                animationDuration: 800,
+                cap: {size: '5%', style: { fill: '#ff0000', stroke: '#00ff00' }, visible: true},
+                caption: {value: '' +
+                        'NL/hr', position: 'bottom', offset: [0, 10], visible: true},
+                width: '100%',
+                height: '100%'
+            });
+
+            slider1 = $('#Electrolyser1Slider')
+            slider1.jqxSlider({
+                max:100,
+                min:59,
+                showMinorTicks: true,
+                minorTicksFrequency: 1,
+                ticksFrequency: 10,
+                theme:"orange",
+                width:"98%",
+                showButtons: false,
+                tooltip:true,
+                tooltipFormatFunction: sliderTooltipFormat,
+            });
+            slider1.on('slideEnd', Slider1End);
+            slider1.on('slideStart', Slider1Start);
+
+            $('#Electrolyser2').jqxGauge({
+                ticksMinor: {interval: 10, size: '5%'},
+                ticksMajor: {interval: 50,size: '9%'},
+                max: 550,
+                min: 0,
+                labels: {interval: 50},
+                value: 0,
+                radius: '50%',
+                animationDuration: 800,
+                cap: {size: '5%', style: { fill: '#ff0000', stroke: '#00ff00' }, visible: true},
+                caption: {value: 'NL/hr', position: 'bottom', offset: [0, 10], visible: true},
+                width: '100%',
+                height: '100%',
+            });
+
+            slider2 = $('#Electrolyser2Slider');
+            slider2.jqxSlider({
+                max:100,
+                min:59,
+                showMinorTicks: true,
+                minorTicksFrequency: 1,
+                ticksFrequency: 10,
+                theme:"orange",
+                width:"98%",
+                showButtons: false,
+                tooltip:true,
+                tooltipFormatFunction: sliderTooltipFormat,
+            });
+            slider2.on('slideEnd', Slider2End);
+            slider2.on('slideStart', Slider2Start);
+
+            $('#FuelCell1').jqxGauge({
+                ranges: [{startValue: -50, endValue: 2500, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
+                    {startValue: 2500, endValue: 3750, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
+                    {startValue: 3750, endValue: 4250, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
+                ticksMinor: {interval: 50, size: '5%'},
+                ticksMajor: {interval: 500,size: '9%'},
+                max: 4250,
+                min: -50,
+                labels: {interval: 500},
+                value: 0,
+                radius: '50%',
+                animationDuration: 800,
+                cap: {size: '5%', style: { fill: '#ff0000', stroke: '#00ff00' }, visible: true},
+                caption: {value: '' +
+                        'Watts', position: 'bottom', offset: [0, 10], visible: true},
+                width: '100%',
+                height: '100%'
+            });
+
+            $('#FuelCell2').jqxGauge({
+                ranges: [{startValue: -50, endValue: 2500, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
+                    {startValue: 2500, endValue: 3750, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
+                    {startValue: 3750, endValue: 4250, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
+                ticksMinor: {interval: 50, size: '5%'},
+                ticksMajor: {interval: 500,size: '9%'},
+                max: 4250,
+                min: -50,
+                labels: {interval: 500},
+                value: 0,
+                radius: '50%',
+                animationDuration: 800,
+                cap: {size: '5%', style: { fill: '#ff0000', stroke: '#00ff00' }, visible: true},
+                caption: {value: 'NL/hr', position: 'bottom', offset: [0, 10], visible: true},
+                width: '100%',
+                height: '100%',
+
+            });
+
+            $('#TankPressure').jqxLinearGauge({
+                ranges: [{startValue: 0, endValue: 10, style: {fill: 'RED', stroke: 'RED'}},
+                    {startValue: 10, endValue: 20, style: {fill: 'ORANGE', stroke: 'ORANGE'}},
+                    {startValue: 20, endValue: 36, style: {fill: 'GREEN', stroke: 'GREEN'}}],
+                orientation: 'vertical',
+                ticksMinor: {interval: 1, size: '20%'},
+                ticksMajor: {interval: 10,size: '25%'},
+                ticksOffset: ['25%', '4%'],
+                pointer: {size: '10%'},
+                scaleLength: '92%',
+                max: 36,
+                min: 0,
+                labels: {interval: 10, position: 'near'},
+                value: 0,
+                animationDuration: 50,
+                width: '95%',
+                height: '100%',
+            });
+            if (el1.width() > el1.height()) {
+                el1.css("width","39vh");
+                el2.css("width","39vh");
+                fc1.css("width","39vh");
+                fc2.css("width","39vh");
+            } else {
+                el1.css("height", "39vw")
+                el2.css("height", "39vw")
+                fc1.css("height", "39vw")
+                fc2.css("height", "39vw")
+            }
+            receiveStatus();
+        }
+    </script>
+
+</head>
+<body>
+<div>
+    <div>
+        <div style="float:left; width:83vw; height:95vh">
+            <div class="gauge_row" style="width:100%; height:50%">
+                <div style="width:50%; float:left">
+                    <div class="dial_gauge" id="el1" style="display:unset; width:100%">
+                        <div id="Electrolyser1Container" class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=1')">
+                            <div id='Electrolyser1' style="width:50vw"></div><br />
+                        </div>
+                        <div>
+                            <div id="Electrolyser1Slider"></div>
+                            <h2 id="electrolyser1Label" style="text-align:center">Electrolyser 1</h2>
+                        </div>
+                    </div>
+                    <div class="dial_gauge" id="el1_off" style="display:none; width:100%">
+                        <h1>Electrolyer 1 is switched off</h1>
+                    </div>
+                </div>
+                <div style="width:50%; float:left">
+                    <div class="dial_gauge" id="el2" style="display:unset; width:100%">
+                        <div id="Electrolyser2Container" class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=2')">
+                            <div id='Electrolyser2' style="width:50vw"></div><br />
+                        </div>
+                        <div>
+                            <div id="Electrolyser2Slider"></div>
+                            <h2 id="electrolyser2Label" style="text-align:center">Electrolyser 2</h2>
+                        </div>
+                    </div>
+                    <div class="dial_gauge" id="el2_on" style="display:none; width:100%">
+                        <h1>Electrolyer 2 is switched off</h1>
+                    </div>
+                </div>
+            </div>
+            <div class="gauge_row" style="width:100%; height:50%">
+                <div id="fc1" class="dial_gauge">
+                    <div id="FuelCell1Container" class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=1')">
+                        <div id='FuelCell1' style="width:49vw"></div><br />
+                    </div>
+                    <div>
+                        <h2 id="FuelCell1Label" style="text-align:center">Fuel Cell 1</h2>
+                    </div>
+                </div>
+                <div id="fc2" class="dial_gauge">
+                    <div id="FuelCell2Container" class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=2')">
+                        <div id='FuelCell2' style="width:49vw"></div><br />
+                    </div>
+                    <div>
+                        <h2 id="FuelCell2Label" style="text-align:center">Fuel Cell 2</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="linear_gauge" >
+            <div class="linear_gauge_pressure" onclick="window.open('h2_data.html')">
+                <div id='TankPressure' ></div>
+            </div>
+            <div><h2 id="tankPressureLabel" style="text-align:center">H2 (bar)</h2></div>
+        </div>
+    </div>
+    <div style="clear:both">
+        <a href="/index.html">Back to Menu</a>
+    </div>
+</div>
+</body>
+<script type="text/javascript">
+    setUpGauges();
+
+</script>
+</html>
+

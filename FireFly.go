@@ -211,47 +211,46 @@ func getKeyValueLines(text string, valueDelimiter string) []string {
 	return valueLines
 }
 
-func populateFuelCellData(text string) (status *fuelCellStatus) {
+func populateFuelCellData(text string, fcStatus *fuelCellStatus) *fuelCellStatus {
 	valueLines := getKeyValueLines(text, ": ")
 	if len(valueLines) > 0 {
-		status = new(fuelCellStatus)
 		for _, valueLine := range valueLines {
 			keyValue := strings.Split(valueLine, ": ")
 			key := strings.Trim(keyValue[0], " ")
 			value := strings.Trim(keyValue[1], " ")
 			switch key {
 			case "Serial Number":
-				status.SerialNumber = strings.Trim(value, "\u0000")
+				fcStatus.SerialNumber = strings.Trim(value, "\u0000")
 			case "Version":
-				status.Version = value
+				fcStatus.Version = value
 			case "Output Power":
-				status.OutputPower, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
+				fcStatus.OutputPower, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
 			case "Output Volt":
-				status.OutputVolt, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
+				fcStatus.OutputVolt, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
 			case "Output Current":
-				status.OutputCurrent, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
+				fcStatus.OutputCurrent, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
 			case "Anode Press":
-				status.AnodePress, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
+				fcStatus.AnodePress, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
 			case "Inlet Temp":
-				status.InletTemp, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
+				fcStatus.InletTemp, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
 			case "Outlet Temp":
-				status.OutletTemp, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
+				fcStatus.OutletTemp, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
 			case "State":
-				status.State = value
+				fcStatus.State = value
 			case "Fault Flag_A":
-				status.FaultFlagA = value
+				fcStatus.FaultFlagA = value
 			case "Fault Flag_B":
-				status.FaultFlagB = value
+				fcStatus.FaultFlagB = value
 			case "Fault Flag_C":
-				status.FaultFlagC = value
+				fcStatus.FaultFlagC = value
 			case "Fault Flag_D":
-				status.FaultFlagD = value
+				fcStatus.FaultFlagD = value
 			default:
 				log.Printf("Fuelcell info returned >>>>> [%s]\n", valueLine)
 			}
 		}
 	}
-	return
+	return fcStatus
 }
 
 func populateGasData(text string) {
@@ -513,7 +512,7 @@ func getTdsStatus() {
 }
 
 func getFuelCellStatus(device int16) (status *fuelCellStatus) {
-	fcStatus := new(fuelCellStatus)
+	fcStatus := SystemStatus.FuelCells[device-1]
 	fcStatus.State = "Switched Off"
 	if (device < 1) || (device > systemConfig.NumFc) {
 		log.Panic("Invalid fuel cell in get status - ", device)
@@ -529,7 +528,7 @@ func getFuelCellStatus(device int16) (status *fuelCellStatus) {
 		fcStatus.State = "(Error)"
 		return fcStatus
 	}
-	return populateFuelCellData(text)
+	return populateFuelCellData(text, fcStatus)
 }
 
 func getRelayStatus() bool {
