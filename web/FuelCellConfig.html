@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+
+    <script type="text/javascript">
+        function getVal(id){
+            return document.getElementById(id).value;
+        }
+        function GenerateFile() {
+            var body="Target_Output_Voltage_V = " + getVal("Target_Output_Voltage_V") + "\r\n" +
+                "Delayed_Start_Under_Voltage_V = " + getVal("Delayed_Start_Under_Voltage_V") + "\r\n" +
+                "Delayed_Start_Qualification_Time_s = " + getVal("Delayed_Start_Qualification_Time_s") + "\r\n" +
+                "Immediate_Start_Under_Voltage_V = " + getVal("Immediate_Start_Under_Voltage_V") + "\r\n" +
+                "Delayed_Stop_Over_Voltage_V = " + getVal("Delayed_Stop_Over_Voltage_V") + "\r\n" +
+                "Delayed_Stop_OV_Qualification_Time_s = " + getVal("Delayed_Stop_OV_Qualification_Time_s") + "\r\n" +
+                "Delayed_Stop_Under_Current_A = " + getVal("Delayed_Stop_Under_Current_A") + "\r\n" +
+                "Delayed_Stop_UC_Qualification_Time_s = " + getVal("Delayed_Stop_UC_Qualification_Time_s") + "\r\n" +
+                "Deny_Start_Under_Voltage_V = " + getVal("Deny_Start_Under_Voltage_V") + "\r\n" +
+                "System_Index = " + getVal("System_Index") + "\r\n" +
+                "Output_Voltage_Rise_Rate_Vps = " + getVal("Output_Voltage_Rise_Rate_Vps") + "\r\n" +
+                "Minimum_Output_Voltage_V = " + getVal("Minimum_Output_Voltage_V") + "\r\n" +
+                "Output_Current_Limit_A = " + getVal("Output_Current_Limit_A") + "\r\n" +
+                "Hard_Set_Output_Voltage = " + getVal("Hard_Set_Output_Voltage") + "\r\n" +
+                "Output_Power_Limit_W = " + getVal("Output_Power_Limit_W") + "\r\n" +
+                "Restart_Delay_s = " + getVal("Restart_Delay_s") + "\r\n" +
+                "CAN_Baud_Rate_enum = " + getVal("CAN_Baud_Rate_enum") + "\r\n" +
+                "CAN_Mode_enum = " + getVal("CAN_Mode_enum") + "\r\n" +
+                "CAN_J1939_Send_Address = " + getVal("CAN_J1939_Send_Address") + "\r\n" +
+                "Serial_Baud_Rate_enum = " + getVal("Serial_Baud_Rate_enum") + "\r\n";
+            var bb = new Blob([body ], { type: 'text/plain' });
+            var a = document.createElement('a');
+            a.download = getVal("fileName");
+            a.href = window.URL.createObjectURL(bb);
+            a.click();
+            alert("Your file can be found in the downloads folder.");
+        }
+
+        // Takes a config line and processes the directive
+        function parseEntry(entry) {
+            if (entry.indexOf('=') < 1)
+                return;
+            directive = entry.split(" = ");
+            var field = document.getElementById(directive[0])
+            if (field != null) {
+                field.value = directive[1];
+            } else {
+                alert("[" + directive[0] + "] was not found. Are you sure this is the right file?");
+            }
+        }
+
+        // Takes a config file body and processes each line
+        function parseContent(config) {
+            lines = config.split("\r\n");
+            lines.forEach(parseEntry);
+            document.getElementById("fields").style.display = "inline";
+            document.getElementById("configFileDiv").style.display = "none";
+        }
+        function onFileChange(fileInput) {
+            if(fileInput.files[0] === undefined) {
+                return ;
+            }
+            // Example of what information you can read
+            // var filename = fileInput.files[0].name;
+            // var filesize = fileInput.files[0].size;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var content = ev.target.result; // content is a string
+                document.getElementById("fileName").value = fileInput.files[0].name;
+                parseContent(content);
+            };
+            reader.onerror = function(err) {
+                alert("Failed to read file", err);
+            }
+            reader.readAsText(fileInput.files[0]);
+        }
+    </script>
+</head>
+<body>
+    <div>
+        <h1>Create a settings file for upload to the fuel cell</h1>
+        <div>
+            <div id="configFileDiv">
+                <input type="file" accept=".fcc" id="configFile" onchange="onFileChange(this)" />
+            </div>
+            <div id="fields" style="display:none">
+                <table>
+                    <tr>
+                        <th>
+                            <label for="Target_Output_Voltage_V">Target Output Voltage</label>
+                        </th>
+                        <td>
+                            <input type="number" min="15" max="56" step="0.1" width="100px" name="Target_Output_Voltage_V" id="Target_Output_Voltage_V" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Delayed_Start_Under_Voltage_V">Delayed Start Under Voltage</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="60" step="0.1" width="100px" name="Delayed_Start_Under_Voltage_V"  id="Delayed_Start_Under_Voltage_V" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Delayed_Start_Qualification_Time_s">Delayed Start Qualification Time</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="1440" step="1" width="100px" name="Delayed_Start_Qualification_Time_s" id="Delayed_Start_Qualification_Time_s" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Immediate_Start_Under_Voltage_V">Immediate Start Under Voltage</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="60" step="0.1" width="100px" name="Immediate_Start_Under_Voltage_V" id="Immediate_Start_Under_Voltage_V" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Delayed_Stop_Over_Voltage_V">Delayed Stop Over Voltage</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="60" step="0.1" width="100px" name="Delayed_Stop_Over_Voltage_V" id="Delayed_Stop_Over_Voltage_V" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Delayed_Stop_OV_Qualification_Time_s">Delayed Stop OV Qualification Time</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="3600" step="1" width="100px" name="Delayed_Stop_OV_Qualification_Time_s" id="Delayed_Stop_OV_Qualification_Time_s" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Delayed_Stop_Under_Current_A">Delayed Stop Under Current</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="120" step="0.1" width="100px" name="Delayed_Stop_Under_Current_A" id="Delayed_Stop_Under_Current_A" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Delayed_Stop_UC_Qualification_Time_s">Delayed Stop UC Qualification Time</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="3600" step="1" width="100px" name="Delayed_Stop_UC_Qualification_Time_s" id="Delayed_Stop_UC_Qualification_Time_s" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Deny_Start_Under_Voltage_V">Deny Start Under Voltage</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="50" step="0.1" width="100px" name="Deny_Start_Under_Voltage_V" id="Deny_Start_Under_Voltage_V" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="System_Index">System Index</label>
+                        </th>
+                        <td>
+                            <input type="number" min="1" max="8" step="1" name="System_Index" id="System_Index" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Output_Voltage_Rise_Rate_Vps">Output Voltage Rise Rate</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0.017" max="2000" step="0.001" width="100px" name="Output_Voltage_Rise_Rate_Vps" id="Output_Voltage_Rise_Rate_Vps" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Minimum_Output_Voltage_V">Minimum Output Voltage</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="60" step="0.1" width="100px" name="Minimum_Output_Voltage_V" id="Minimum_Output_Voltage_V" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Output_Current_Limit_A">Output Current Limit</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="40" step="0.1" width="100px" name="Output_Current_Limit_A" id="Output_Current_Limit_A" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Hard_Set_Output_Voltage">Hard Set Output Voltage</label>
+                        </th>
+                        <td>
+                            <select name="Hard_Set_Output_Voltage" id="Hard_Set_Output_Voltage" >
+                                <option value=true>true</option>
+                                <option value=false>false</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Output_Power_Limit_W">Output Power Limit</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="1250" step="1" width="100px" name="Output_Power_Limit_W" id="Output_Power_Limit_W" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Restart_Delay_s">Restart Delay</label>
+                        </th>
+                        <td>
+                            <input type="number" min="0" max="3600" step="1" width="100px" name="Restart_Delay_s" id="Restart_Delay_s" value="" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="CAN_Baud_Rate_enum">CAN Baud Rate</label>
+                        </th>
+                        <td>
+                            <input name="CAN_Baud_Rate_enum" id="CAN_Baud_Rate_enum" value="" disabled />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="CAN_Mode_enum">CAN Mode</label>
+                        </th>
+                        <td>
+                            <input name="CAN_Mode_enum" id="CAN_Mode_enum" value="" disabled/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="CAN_J1939_Send_Address">CAN J1939 Send Address</label>
+                        </th>
+                        <td>
+                            <input name="CAN_J1939_Send_Address" id="CAN_J1939_Send_Address" value="" disabled/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <label for="Serial_Baud_Rate_enum">Serial Baud Rate</label>
+                        </th>
+                        <td>
+                            <input name="Serial_Baud_Rate_enum" id="Serial_Baud_Rate_enum" value="" disabled/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>
+                            <input type="button" value="Generate File" onclick="GenerateFile()" />
+                        </th>
+                        <td>
+                            <label for="fileName">File Name :</label><input type="text" id="fileName" name="fileName" value="" />
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    </body>
+</html>

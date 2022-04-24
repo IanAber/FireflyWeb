@@ -16,9 +16,12 @@ import (
 	"github.com/gorilla/websocket"
 	"io"
 	"log"
-	"log/syslog"
 	"math"
+
+	//	"log/syslog"
+	syslog "github.com/RackSec/srslog"
 	"net/http"
+	"net/smtp"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -28,6 +31,8 @@ import (
 	"unicode"
 )
 
+const holdOffMinutes = 10 // Minimum time after turning off before it is turned on again
+const holdOnMinutes = 3   // Minimum time after turning on before it is turned off again
 const convertPSIToBar = 14.503773773
 const redirectToMainMenuScript = `
 <script>
@@ -37,6 +42,172 @@ const redirectToMainMenuScript = `
 	}, 2000);
 </script>
 `
+
+var RateMap = map[int]int8{
+	0:      0,
+	60:     1,
+	61:     2,
+	62:     2,
+	63:     3,
+	64:     4,
+	65:     5,
+	66:     6,
+	67:     7,
+	68:     7,
+	69:     8,
+	70:     9,
+	71:     10,
+	72:     11,
+	73:     11,
+	74:     12,
+	75:     13,
+	76:     14,
+	77:     15,
+	78:     16,
+	79:     16,
+	80:     17,
+	81:     18,
+	82:     19,
+	83:     20,
+	84:     20,
+	85:     21,
+	86:     22,
+	87:     23,
+	88:     24,
+	89:     25,
+	90:     25,
+	91:     26,
+	92:     27,
+	93:     28,
+	94:     29,
+	95:     30,
+	96:     30,
+	97:     31,
+	98:     32,
+	99:     33,
+	100:    34,
+	60060:  34,
+	60061:  35,
+	60062:  36,
+	60063:  37,
+	60064:  38,
+	60065:  39,
+	60066:  39,
+	60067:  40,
+	60068:  41,
+	60069:  42,
+	60070:  43,
+	60071:  43,
+	60072:  44,
+	60073:  45,
+	60074:  46,
+	60075:  47,
+	60076:  48,
+	60077:  48,
+	60078:  49,
+	60079:  50,
+	60080:  51,
+	60081:  52,
+	60082:  52,
+	60083:  53,
+	60084:  54,
+	60085:  55,
+	60086:  56,
+	60087:  56,
+	60088:  57,
+	60089:  57,
+	60090:  58,
+	60091:  59,
+	60092:  60,
+	60093:  61,
+	60094:  61,
+	60095:  62,
+	60096:  63,
+	60097:  64,
+	60098:  65,
+	60099:  66,
+	60100:  66,
+	61100:  67,
+	62100:  68,
+	63100:  69,
+	64100:  70,
+	65100:  71,
+	66100:  72,
+	67100:  73,
+	68100:  74,
+	69100:  75,
+	70100:  75,
+	71100:  76,
+	72100:  77,
+	73100:  78,
+	74100:  79,
+	75100:  80,
+	76100:  80,
+	77100:  81,
+	78100:  82,
+	79100:  83,
+	80100:  84,
+	81100:  84,
+	82100:  85,
+	83100:  86,
+	84100:  87,
+	85100:  88,
+	86100:  89,
+	87100:  89,
+	88100:  90,
+	89100:  91,
+	90100:  92,
+	91100:  93,
+	92100:  93,
+	93100:  94,
+	94100:  95,
+	95100:  96,
+	96100:  97,
+	97100:  98,
+	98100:  98,
+	99100:  99,
+	100100: 100,
+	100060: 1,
+	100061: 2,
+	100062: 3,
+	100063: 3,
+	100064: 4,
+	100065: 5,
+	100066: 6,
+	100067: 6,
+	100068: 7,
+	100069: 8,
+	100070: 9,
+	100071: 10,
+	100072: 11,
+	100073: 11,
+	100074: 13,
+	100075: 14,
+	100076: 15,
+	100077: 15,
+	100078: 16,
+	100079: 17,
+	100080: 18,
+	100081: 18,
+	100082: 19,
+	100083: 20,
+	100084: 21,
+	100085: 22,
+	100086: 22,
+	100087: 23,
+	100088: 24,
+	100089: 25,
+	100090: 25,
+	100091: 26,
+	100092: 27,
+	100093: 28,
+	100094: 29,
+	100095: 29,
+	100096: 30,
+	100097: 31,
+	100098: 32,
+	100099: 32,
+}
 
 type gasStatus struct {
 	FuelCellPressure float64
@@ -57,6 +228,10 @@ type fuelCellStatus struct {
 	FaultFlagB    string
 	FaultFlagC    string
 	FaultFlagD    string
+	faultTime     time.Time
+	clearTime     time.Time
+	inRestart     bool
+	numRestarts   int
 }
 
 type relayStatus struct {
@@ -102,6 +277,8 @@ var (
 		Gas           gasStatus
 		TDS           tdsStatus
 	}
+
+	debug bool
 )
 
 var systemConfig struct {
@@ -158,9 +335,9 @@ func showElectrolyserProductionRatePage(w http.ResponseWriter, r *http.Request) 
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
 	if (err != nil) || (device > 2) || (device < 1) {
-		log.Print("Invalid electrolyser in get production rate request")
+		log.Print("Invalid electrolyser in set production rate request")
 		var jErr JSONError
-		jErr.AddErrorString("electrolyser", "Invalid electrolyser in get production rate request")
+		jErr.AddErrorString("electrolyser", "Invalid electrolyser in set production rate request")
 		jErr.ReturnError(w, 400)
 		return
 	}
@@ -213,7 +390,24 @@ func getKeyValueLines(text string, valueDelimiter string) []string {
 
 func populateFuelCellData(text string, fcStatus *fuelCellStatus) *fuelCellStatus {
 	valueLines := getKeyValueLines(text, ": ")
+	// Clear all existing values becuase we don't necessarily get everything from the fuel cell
+	fcStatus.FaultFlagA = ""
+	fcStatus.FaultFlagB = ""
+	fcStatus.FaultFlagC = ""
+	fcStatus.FaultFlagD = ""
+	fcStatus.State = ""
+	fcStatus.SerialNumber = ""
+	fcStatus.OutputPower = 0.0
+	fcStatus.OutputVolt = 0.0
+	fcStatus.OutputCurrent = 0.0
+	fcStatus.OutletTemp = 0.0
+	fcStatus.InletTemp = 0.0
+	fcStatus.AnodePress = 0.0
+	fcStatus.Version = ""
+
+	// Check that we got something
 	if len(valueLines) > 0 {
+		// For each line, parse the value into the status struct
 		for _, valueLine := range valueLines {
 			keyValue := strings.Split(valueLine, ": ")
 			key := strings.Trim(keyValue[0], " ")
@@ -246,10 +440,12 @@ func populateFuelCellData(text string, fcStatus *fuelCellStatus) *fuelCellStatus
 			case "Fault Flag_D":
 				fcStatus.FaultFlagD = value
 			default:
+				// Don't know how to handle this
 				log.Printf("Fuelcell info returned >>>>> [%s]\n", valueLine)
 			}
 		}
 	}
+	// Return the completed status struct
 	return fcStatus
 }
 
@@ -304,13 +500,7 @@ func populateSystemInfo(text string) {
 			case "Num_EL":
 				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
 				systemConfig.NumEl = int16(n)
-				if n > 0 {
-					el1 := NewElectrolyser("192.168.10.250")
-					SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, el1)
-					if n > 1 {
-						SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, NewElectrolyser("192.168.10.251"))
-					}
-				}
+
 			case "Num_FC":
 				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
 				systemConfig.NumFc = int16(n)
@@ -379,6 +569,14 @@ func populateSystemInfo(text string) {
 			}
 		}
 	}
+	if systemConfig.NumEl > 0 {
+		addresses := strings.Split(systemConfig.ElAddresses, ",")
+		SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, NewElectrolyser(strings.Trim(addresses[0], " ")))
+		if systemConfig.NumEl > 1 {
+			SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, NewElectrolyser(strings.Trim(addresses[1], " ")))
+		}
+	}
+
 	return
 }
 
@@ -465,7 +663,7 @@ func populateTdsData(text string) {
 
 func validateDevice(device uint8) error {
 	if device >= uint8(systemConfig.NumEl) {
-		return fmt.Errorf("Invalid Electrolyser device - %d", device)
+		return fmt.Errorf("invalid Electrolyser device - %d", device)
 	}
 	return nil
 }
@@ -554,11 +752,11 @@ func getElectrolyserHtmlStatus(El *Electrolyser) (html string) {
   <tr><td class="label">H2 Flow</td><td>%0.2f NL/hour</td><td class="label">Water Pressure</td><td>%0.1f bar</td></tr>
   <tr><td class="label">Max Tank Pressure</td><td>%0.1f bar</td><td class="label">Restart Pressure</td><td>%0.1f bar</td></tr>
   <tr><td class="label">Current Production Rate</td><td>%0.1f%%</td><td class="label">Default Production Rate</td><td>%0.1f%%</td></tr>
-  <tr><td class="label">Stack Voltage</td><td>%0.2f volts</td><td class="label">&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="label">Stack Voltage</td><td>%0.2f volts</td><td class="label">Serial Number</td><td>%s</td></tr>
 </table>`, El.GetSystemState(), El.getState(), El.status.ElectrolyteLevel.String(), El.status.ElectrolyteTemp,
 		El.status.InnerH2Pressure, El.status.OuterH2Pressure, El.status.H2Flow, El.status.WaterPressure,
 		El.status.MaxTankPressure, El.status.RestartPressure, El.status.CurrentProductionRate, El.status.DefaultProductionRate,
-		El.status.StackVoltage)
+		El.status.StackVoltage, El.status.Serial)
 	return html
 }
 
@@ -729,6 +927,36 @@ func getErrorDKey(index int) string {
 	return errors[index]
 }
 
+func getAllFuelCellErrors(FlagA string, FlagB string, FlagC string, FlagD string) string {
+	faultA := getFuelCellError('A', FlagA)
+	faultB := getFuelCellError('B', FlagB)
+	faultC := getFuelCellError('C', FlagC)
+	faultD := getFuelCellError('D', FlagD)
+	faults := ""
+	if len(faultA) > 0 {
+		faults = strings.Join(faultA, ";")
+	}
+	if len(faultB) > 0 {
+		if len(faults) > 0 {
+			faults += "\r\n"
+		}
+		faults += strings.Join(faultB, ";")
+	}
+	if len(faultC) > 0 {
+		if len(faults) > 0 {
+			faults += "\r\n"
+		}
+		faults += strings.Join(faultC, ";")
+	}
+	if len(faultD) > 0 {
+		if len(faults) > 0 {
+			faults += "\r\n"
+		}
+		faults += strings.Join(faultD, ";")
+	}
+	return faults
+}
+
 func getFuelCellError(faultFlag rune, FaultFlag string) []string {
 	var errors []string
 
@@ -806,6 +1034,9 @@ func getGasHtmlStatus() (html string) {
 	return html
 }
 
+/**
+Convert relay status to english text
+*/
 func booleanToHtmlClass(b bool) string {
 	if b {
 		return "RelayOn"
@@ -941,6 +1172,9 @@ th.RelayOff {
 	}
 }
 
+/**
+Conver an error object to JSON to return to the caller
+*/
 func errorToJson(err error) string {
 	var errStruct struct {
 		Error string
@@ -954,7 +1188,13 @@ func errorToJson(err error) string {
 	return string(bytes)
 }
 
+/**
+Get the electrolyser status as a JSON object
+*/
 func getElectrolyserJsonStatus(w http.ResponseWriter, r *http.Request) {
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
+
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
 	if (err != nil) || (device > 2) || (device < 1) {
@@ -964,6 +1204,7 @@ func getElectrolyserJsonStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	bytes, err := json.Marshal(SystemStatus.Electrolysers[device-1].status)
 	if err != nil {
+		log.Println(SystemStatus.Electrolysers[device-1].status)
 		if _, err := fmt.Fprint(w, errorToJson(err)); err != nil {
 			log.Print(err)
 		}
@@ -973,7 +1214,13 @@ func getElectrolyserJsonStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Get the dryer status as a JSON object
+*/
 func getDryerJsonStatus(w http.ResponseWriter, r *http.Request) {
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
+
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
 	if (err != nil) || (device > 2) || (device < 1) {
@@ -992,7 +1239,13 @@ func getDryerJsonStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Get the fuel cell status as a JSON object
+*/
 func getFuelCellJsonStatus(w http.ResponseWriter, r *http.Request) {
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
+
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
 	if (err != nil) || (device > 2) || (device < 1) {
@@ -1020,6 +1273,16 @@ func getFuelCellJsonStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// This function will set the electrolyser status to switched on. It can be scheduled using the timeAfterFunc method
+func enableDevice(device int) func() {
+	return func() {
+		SystemStatus.Electrolysers[device].status.SwitchedOn = true
+	}
+}
+
+/**
+Return the current system status
+*/
 func getSystemStatus() {
 	if !getRelayStatus() {
 		SystemStatus.valid = false
@@ -1033,12 +1296,42 @@ func getSystemStatus() {
 	for device := range SystemStatus.FuelCells {
 		getFuelCellStatus(int16(device + 1))
 	}
+
 	for device := range SystemStatus.Electrolysers {
-		SystemStatus.Electrolysers[device].ReadValues()
+
+		ElectrolyserOn := false
+		// Check the power relay to see if this electrolyser has power
+		switch device {
+		case 0:
+			ElectrolyserOn = SystemStatus.Relays.Electrolyser1
+		case 1:
+			ElectrolyserOn = SystemStatus.Relays.Electrolyser2
+		default:
+			log.Println("invalid electrolyser in getSystemStatus")
+		}
+		// If the relay is closed but the status still shows that the electrolyser is off we should give it 5 seconds to power up before we try to get its status
+		// otherwise we will get a load of errors that are not real.
+		if (!SystemStatus.Electrolysers[device].status.SwitchedOn) && ElectrolyserOn {
+			// Get the function to set the status. This is necessary becuase we cannot directly pass parameters to the timeAfterFunc function
+			f := enableDevice(device)
+			// Schedule this function to run in 5 seconds to give the Electrolyser time to power up
+			time.AfterFunc(time.Second*5, f)
+		}
+		// If the electrolyser is showing on but the relay is off, immediately set the electrolyser status to powered off
+		if !ElectrolyserOn {
+			SystemStatus.Electrolysers[device].status.SwitchedOn = false
+		}
+		// If the electrolyser shows powered up, get the current status
+		if SystemStatus.Electrolysers[device].status.SwitchedOn {
+			SystemStatus.Electrolysers[device].ReadValues()
+		}
 	}
 	SystemStatus.valid = true
 }
 
+/**
+Log the current system status tot he database
+*/
 func logStatus() {
 	var err error
 	if pDB == nil {
@@ -1373,8 +1666,8 @@ func logStatus() {
 	       ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?,
-	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+	       ?, ?, conv(?,16,10), conv(?,16,10), conv(?,16,10), conv(?,16,10), ?, ?, ?, ?, ?,
+	       ?, ?, conv(?,16,10), conv(?,16,10), conv(?,16,10), conv(?,16,10), ?, ?, ?, ?, ?,
 	       ?, ?,
 	       ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?);`
@@ -1397,6 +1690,9 @@ func logStatus() {
 	}
 }
 
+/**
+Get running status as a JSON object
+*/
 func getMinJsonStatus() string {
 	type minElectrolyserStatus struct {
 		On    bool
@@ -1408,6 +1704,7 @@ func getMinJsonStatus() string {
 		On     bool
 		State  string
 		Output float32
+		Alarm  string
 	}
 	var minStatus struct {
 		Electrolysers []*minElectrolyserStatus
@@ -1425,7 +1722,7 @@ func getMinJsonStatus() string {
 		if minEl.On {
 			minEl.Rate = int8(el.status.CurrentProductionRate)
 			minEl.State = el.getState()
-			minEl.Flow = el.status.H2Flow
+			minEl.Flow = float32(el.status.H2Flow)
 		}
 		minStatus.Electrolysers = append(minStatus.Electrolysers, minEl)
 	}
@@ -1433,6 +1730,7 @@ func getMinJsonStatus() string {
 		minFc := new(minFuelCellStatus)
 		minFc.State = fc.State
 		minFc.Output = float32(fc.OutputPower)
+		minFc.Alarm = getAllFuelCellErrors(fc.FaultFlagA, fc.FaultFlagB, fc.FaultFlagC, fc.FaultFlagD)
 		minStatus.FuelCells = append(minStatus.FuelCells, minFc)
 	}
 
@@ -1445,11 +1743,17 @@ func getMinJsonStatus() string {
 }
 
 func getMinHtmlStatus(w http.ResponseWriter, _ *http.Request) {
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
+
 	if _, err := fmt.Fprint(w, getMinJsonStatus()); err != nil {
 		log.Println("Error getting MinHtmlStatus - ", err)
 	}
 }
 
+/**
+Get electrolyser recorded values
+*/
 func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	type Row struct {
 		Logged            string
@@ -1489,6 +1793,8 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var results []*Row
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
 	from := vars["from"]
@@ -1538,6 +1844,9 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Get fuel cell recorded values
+*/
 func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	type Row struct {
 		Logged     string
@@ -1551,6 +1860,8 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var results []*Row
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
 	from := vars["from"]
@@ -1594,6 +1905,9 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Turn the given electrolyser on
+*/
 func setElOn(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	device := vars["device"]
@@ -1629,6 +1943,35 @@ func setElOn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Turn all electrolysers on
+*/
+func setAllElOn(w http.ResponseWriter, _ *http.Request) {
+	_, err := sendCommand("el1dr on")
+	if err != nil {
+		var jErr JSONError
+		log.Print(err)
+		jErr.AddError("Electrolyser", err)
+		jErr.ReturnError(w, 500)
+		return
+	}
+	_, err = sendCommand("el2 on")
+	if err != nil {
+		var jErr JSONError
+		log.Print(err)
+		jErr.AddError("Electrolyser", err)
+		jErr.ReturnError(w, 500)
+		return
+	}
+	_, err = fmt.Fprintf(w, `{"success":true}`)
+	if err != nil {
+		log.Print(err)
+	}
+}
+
+/**
+Turn the given electrolyser off
+*/
 func setElOff(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	device := vars["device"]
@@ -1671,6 +2014,35 @@ func setElOff(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Turn all electrolysers off
+*/
+func setAllElOff(w http.ResponseWriter, _ *http.Request) {
+	_, err := sendCommand("el2 off")
+	if err != nil {
+		var jErr JSONError
+		log.Print(err)
+		jErr.AddError("Electrolyser", err)
+		jErr.ReturnError(w, 500)
+		return
+	}
+	_, err = sendCommand("el1dr off")
+	if err != nil {
+		var jErr JSONError
+		log.Print(err)
+		jErr.AddError("Electrolyser", err)
+		jErr.ReturnError(w, 500)
+		return
+	}
+	_, err = fmt.Fprintf(w, `{"success":true}`)
+	if err != nil {
+		log.Print(err)
+	}
+}
+
+/**
+Turn the fuel cell gas on
+*/
 func setGasOn(w http.ResponseWriter, _ *http.Request) {
 	response, err := sendCommand("gas on")
 	if err != nil {
@@ -1697,6 +2069,9 @@ func setGasOn(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+/**
+Turn the fuel cell gas off
+*/
 func setGasOff(w http.ResponseWriter, _ *http.Request) {
 	response, err := sendCommand("gas off")
 	if err != nil {
@@ -1723,6 +2098,67 @@ func setGasOff(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+/**
+Turn on the drain solenoid
+*/
+func setDrainOn(w http.ResponseWriter, _ *http.Request) {
+	response, err := sendCommand("drain on")
+	if err != nil {
+		log.Print(err)
+		_, err = fmt.Fprintf(w, err.Error())
+		if err != nil {
+			log.Print(err)
+		}
+		return
+	}
+	_, err = fmt.Fprintf(w, `<html>
+  <head>
+    <title>Firefly Drain On</title>
+  </head>
+  <body>
+    <div>%s</div>
+	<div>
+      <h2>You will be redirected to the status page in a moment.</h2>
+    </div>
+  </body>%s
+</html>`, response, redirectToMainMenuScript)
+	if err != nil {
+		log.Print(err)
+	}
+}
+
+/**
+Turn off the drain solenoid
+*/
+func setDrainOff(w http.ResponseWriter, _ *http.Request) {
+	response, err := sendCommand("drain off")
+	if err != nil {
+		log.Print(err)
+		_, err = fmt.Fprintf(w, err.Error())
+		if err != nil {
+			log.Print(err)
+		}
+		return
+	}
+	_, err = fmt.Fprintf(w, `<html>
+  <head>
+    <title>Firefly Drain Off</title>
+  </head>
+  <body>
+    <div>%s</div>
+	<div>
+      <h2>You will be redirected to the status page in a moment.</h2>
+    </div>
+  </body>%s
+</html>`, response, redirectToMainMenuScript)
+	if err != nil {
+		log.Print(err)
+	}
+}
+
+/**
+Turn on the fuel cell
+*/
 func setFcOn(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
@@ -1757,6 +2193,9 @@ func setFcOn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Turn off the fuel cell
+*/
 func setFcOff(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
@@ -1791,6 +2230,9 @@ func setFcOff(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Start the fuel cell
+*/
 func setFcRun(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
@@ -1825,6 +2267,9 @@ func setFcRun(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/**
+Sop the fuel cell
+*/
 func setFcStop(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
@@ -1907,9 +2352,10 @@ func startDataWebSocket(w http.ResponseWriter, r *http.Request) {
 		signal.L.Lock()   // Get the signal and lock it.
 		signal.Wait()     // Wait for it to be signalled again. It is unlocked while we wait then locked again before returning
 		signal.L.Unlock() // Unlock it
+
 		w, err := conn.NextWriter(websocket.TextMessage)
 		if err != nil {
-			log.Println("Failed to get the values websocket writer - ", err)
+			//			log.Println("Failed to get the values websocket writer - ", err)
 			return
 		}
 		var sJSON = getMinJsonStatus()
@@ -1919,38 +2365,112 @@ func startDataWebSocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := w.Close(); err != nil {
-			log.Println("Failed to close the values websocket writer - ", err)
+			//			log.Println("Failed to close the values websocket writer - ", err)
+			return
 		}
 	}
 }
 
+/**
+Set the given electrolyser to the given rate
+*/
 func setElectrolyserRatePercent(rate uint8, device uint8) error {
 	if rate > 0 {
-		if SystemStatus.Electrolysers[device-1].status.ElState == ElIdle {
-			if time.Now().After(SystemStatus.Electrolysers[device-1].OnOffTime.Add(time.Minute * 10)) {
-				SystemStatus.Electrolysers[device-1].Start()
+		if SystemStatus.Electrolysers[device].status.SwitchedOn {
+			if SystemStatus.Electrolysers[device].status.ElState == ElIdle {
+				if time.Now().After(SystemStatus.Electrolysers[device].OnOffTime.Add(time.Minute * holdOffMinutes)) {
+					log.Println("Start electrolyser ", device)
+					SystemStatus.Electrolysers[device].Start()
+					SystemStatus.Electrolysers[device].OnOffTime = time.Now()
+				} else {
+					log.Println("Electrolyser ", device, " is in hold off so is not starting. Waiting until ", SystemStatus.Electrolysers[device].OnOffTime.Add(time.Minute*holdOffMinutes).Format("15:04:05"))
+				}
+			}
+			SystemStatus.Electrolysers[device].SetProduction(rate)
+		} else {
+			if SystemStatus.Gas.TankPressure < 30 {
+				strCommand := "el1dr on"
+				if device == 1 {
+					strCommand = "el2 on"
+				}
+				if _, err := sendCommand(strCommand); err != nil {
+					log.Print(err)
+				}
 			}
 		}
-		SystemStatus.Electrolysers[device-1].SetProduction(rate)
 	} else {
-		if time.Now().After(SystemStatus.Electrolysers[device-1].OnOffTime.Add(time.Minute * 10)) {
-			SystemStatus.Electrolysers[device-1].Stop()
-			SystemStatus.Electrolysers[device-1].OnOffTime = time.Now()
+		if SystemStatus.Electrolysers[device].status.SwitchedOn {
+			SystemStatus.Electrolysers[device].SetProduction(60)
+			if SystemStatus.Electrolysers[device].status.ElState != ElIdle {
+				if time.Now().After(SystemStatus.Electrolysers[device].OnOffTime.Add(time.Minute * holdOnMinutes)) {
+					log.Println("Stop electrolyser ", device)
+					SystemStatus.Electrolysers[device].Stop()
+					SystemStatus.Electrolysers[device].OnOffTime = time.Now()
+				} else {
+					log.Println("Electrolyser ", device, " is in holdon so is not stopping. Waiting until ", SystemStatus.Electrolysers[device].OnOffTime.Add(time.Minute*holdOnMinutes).Format("15:04:05"))
+				}
+			}
 		}
 	}
 	return nil
 }
 
-func preheatElectrolyser(w http.ResponseWriter, _ *http.Request) {
-	for _, el := range SystemStatus.Electrolysers {
-		el.Preheat()
+/**
+Tell the given electrolyser to preheat the electrolyte
+*/
+func preheatElectrolyser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	device := vars["device"]
+	deviceNum, err := strconv.ParseInt(device, 10, 8)
+	if err != nil {
+		log.Println("Failed to get the device. - ", err)
 	}
-	if _, err := fmt.Fprintf(w, "Electrolyser preheat requested"); err != nil {
+	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+		log.Println("Invalid device requeted in preheat - ", err)
+	}
+
+	SystemStatus.Electrolysers[deviceNum-1].Preheat()
+	if _, err := fmt.Fprintf(w, "Electrolyser %d preheat requested", deviceNum); err != nil {
 		log.Println("Error returning status after electrolyser preheat request. - ", err)
 	}
 }
 
-func startElectrolyser(w http.ResponseWriter, _ *http.Request) {
+/**
+Tell all electrolysers to preheat the electrolyte
+*/
+func preheatAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
+	for _, el := range SystemStatus.Electrolysers {
+		el.Preheat()
+	}
+	if _, err := fmt.Fprintf(w, "Electrolyser preheat requested"); err != nil {
+		log.Println("Error returning status after electrolyser preheat all request. - ", err)
+	}
+}
+
+/**
+Start the given electrolyser
+*/
+func startElectrolyser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	device := vars["device"]
+	deviceNum, err := strconv.ParseInt(device, 10, 8)
+	if err != nil {
+		log.Println("Failed to get the device. - ", err)
+	}
+	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+		log.Println("Invalid device requeted in selElOn - ", err)
+	}
+
+	SystemStatus.Electrolysers[deviceNum-1].Start()
+	if _, err := fmt.Fprintf(w, "Electrolyser start requested"); err != nil {
+		log.Println("Error returning status after electrolyser start request. - ", err)
+	}
+}
+
+/**
+Start all electrolysers
+*/
+func startAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	for _, el := range SystemStatus.Electrolysers {
 		el.Start()
 	}
@@ -1959,7 +2479,30 @@ func startElectrolyser(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-func stopElectrolyser(w http.ResponseWriter, _ *http.Request) {
+/**
+Stop the given electrolyser
+*/
+func stopElectrolyser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	device := vars["device"]
+	deviceNum, err := strconv.ParseInt(device, 10, 8)
+	if err != nil {
+		log.Println("Failed to get the device. - ", err)
+	}
+	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+		log.Println("Invalid device requeted in selElOn - ", err)
+	}
+
+	SystemStatus.Electrolysers[deviceNum-1].Stop()
+	if _, err := fmt.Fprintf(w, "Electrolyser stop requested"); err != nil {
+		log.Println("Error returning status after electrolyser stop request. - ", err)
+	}
+}
+
+/**
+Stop all electrolysers
+*/
+func stopAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	for _, el := range SystemStatus.Electrolysers {
 		el.Stop()
 	}
@@ -1968,17 +2511,58 @@ func stopElectrolyser(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-func rebootElectrolyser(w http.ResponseWriter, _ *http.Request) {
-
-	for _, el := range SystemStatus.Electrolysers {
-		el.Reboot()
+/**
+Reboot the given electrolyser
+*/
+func rebootElectrolyser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	device := vars["device"]
+	deviceNum, err := strconv.ParseInt(device, 10, 8)
+	if err != nil {
+		log.Println("Failed to get the device. - ", err)
 	}
-	if _, err := fmt.Fprintf(w, "Electrolyser stop requested"); err != nil {
-		log.Println("Error returning status after electrolyser stop request. - ", err)
+	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+		log.Println("Invalid device requeted in selElOn - ", err)
+	}
+	SystemStatus.Electrolysers[deviceNum-1].Reboot()
+	if _, err := fmt.Fprintf(w, "Electrolyser reboot requested"); err != nil {
+		log.Println("Error returning status after electrolyser reboot request. - ", err)
 	}
 }
 
+/**
+Set a reboot command to all electrolysers
+*/
+func rebootAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
+	for _, el := range SystemStatus.Electrolysers {
+		el.Reboot()
+	}
+	if _, err := fmt.Fprintf(w, "Electrolyser reboot requested"); err != nil {
+		log.Println("Error returning status after electrolyser reboot request. - ", err)
+	}
+}
+
+/**
+Translate the given percentage total rate to values suitable for two electrolysers
+by looking them up in a MAP
+*/
+func getRates(rate int8) (el1 uint8, el2 uint8) {
+	for k, v := range RateMap {
+		if v == rate {
+			return uint8(k % 1000), uint8(k / 1000)
+		}
+	}
+	return 0, 0
+}
+
+/**
+set the electrolyser rate.
+*/
 func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
+	var jError JSONError
+	if debug {
+		log.Println("setElectrolyserRate")
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Print(err)
@@ -1994,6 +2578,9 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
+	if debug {
+		log.Printf("Set electrolyser : %d", jRate.Rate)
+	}
 
 	// Return bad request if outside acceptable range of 0..100%
 	if jRate.Rate > 100 || jRate.Rate < 0 {
@@ -2003,64 +2590,221 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var el1, el2 uint8
+	el1 := uint8(0)
+	el2 := uint8(0)
 
-	ratePercent := uint8((jRate.Rate * 122) / 100)
-	switch {
-	case ratePercent == 0:
-		el1 = 0
-		el2 = 0
-	case ratePercent < 42:
-		el1 = ratePercent + 59
-		el2 = 0
-	case ratePercent < 83:
-		el1 = ratePercent + 18
-		el2 = 60
-	default:
-		el1 = 100
-		el2 = ratePercent - 22
+	if len(SystemStatus.Electrolysers) > 1 {
+		el1, el2 = getRates(int8(jRate.Rate))
+	} else {
+		if jRate.Rate == 0 {
+			el1 = 0
+		} else {
+			el1 = uint8((jRate.Rate*4)/10) + 60
+		}
 	}
 
-	err = setElectrolyserRatePercent(el1, 1)
-	var jError JSONError
+	if debug {
+		log.Println("set electrolyser 1 to ", el1)
+	}
+	err = setElectrolyserRatePercent(el1, 0)
 	if err != nil {
 		jError.AddError("el1", err)
 	}
-	err = setElectrolyserRatePercent(el2, 2)
-	if err != nil {
-		jError.AddError("el2", err)
+	if debug {
+		log.Println("set electrolyser 2 to ", el2)
+	}
+	if len(SystemStatus.Electrolysers) > 1 {
+		err = setElectrolyserRatePercent(el2, 1)
+		if err != nil {
+			jError.AddError("el2", err)
+		}
 	}
 	if len(jError.Errors) > 0 {
+		if debug {
+			log.Println("Errors encountered setting electrolyser rate.")
+		}
 		jError.ReturnError(w, 500)
+	} else {
+		if _, err := fmt.Fprintf(w, `{"el1":%d,"el2":%d`, el1, el2); err != nil {
+			log.Println("Failed to send response -", err)
+		}
 	}
 }
 
+/**
+Return the total electrolyser rate as a percentage, 0-100%
+*/
 func getElectrolyserRate(w http.ResponseWriter, _ *http.Request) {
 
-	var el1, el2 float64
+	var el1, el2 int
+	var jReturnData struct {
+		Rate   int8    `json:"rate"`
+		Gas    float64 `json:"gas"`
+		Status string  `json:"status"`
+	}
 
-	if (SystemStatus.Electrolysers[0].status.ElState == ElIdle) || (SystemStatus.Electrolysers[0].status.ElState == ElStandby) {
-		el1 = 0.0
+	// Set the gas pressure
+	jReturnData.Gas = SystemStatus.Gas.TankPressure
+
+	// Loop through and find if the electrolysers are on
+	ElectrolysersSwitchedOn := len(SystemStatus.Electrolysers) > 0
+	for _, e := range SystemStatus.Electrolysers {
+		if !e.IsSwitchedOn() {
+			// If anyone is switche off then assume all are off
+			ElectrolysersSwitchedOn = false
+		}
+	}
+	if ElectrolysersSwitchedOn {
+		// If all electrolysers are on get the roduction settings
+		if len(SystemStatus.Electrolysers) == 1 {
+			// We only have one electrolyser so this is easy
+			switch SystemStatus.Electrolysers[0].status.ElState {
+			case ElIdle:
+				jReturnData.Status = "Idle"
+				jReturnData.Rate = 0
+			case ElStandby:
+				jReturnData.Status = "Standby"
+				jReturnData.Rate = 0
+			default:
+				jReturnData.Status = "Active"
+				jReturnData.Rate = int8(((SystemStatus.Electrolysers[0].status.CurrentProductionRate - 60) * 100) / 40)
+			}
+		} else {
+			// We have two electrolysers, so we need to work out the rate using the mapping table
+			switch SystemStatus.Electrolysers[0].status.ElState {
+			case ElIdle:
+				jReturnData.Status = "Idle"
+				el1 = 0
+			case ElStandby:
+				jReturnData.Status = "Standby"
+				el1 = 0
+			default:
+				jReturnData.Status = "Active"
+				el1 = int(SystemStatus.Electrolysers[0].status.CurrentProductionRate)
+			}
+
+			switch SystemStatus.Electrolysers[1].status.ElState {
+			case ElIdle:
+				if jReturnData.Status != "Standby" {
+					jReturnData.Status = "Idle"
+				}
+				el2 = 0
+			case ElStandby:
+				jReturnData.Status = "Standby"
+				el2 = 0
+			default:
+				if jReturnData.Status != "Standby" {
+					jReturnData.Status = "Idle"
+				}
+				jReturnData.Status = "Active"
+				el2 = int(SystemStatus.Electrolysers[1].status.CurrentProductionRate)
+			}
+			//if el1 == 0 && el2 != 0 {
+			//	jReturnData.Rate = int8(((el2 - 60) * 100) / 40)
+			//}
+			jReturnData.Rate = RateMap[(el2*1000)+el1]
+		}
 	} else {
-		el1 = float64(SystemStatus.Electrolysers[0].status.CurrentProductionRate)
+		// One or more electrolysers are off, so we report as OFF.
+		jReturnData.Rate = -1
+		jReturnData.Status = "OFF"
 	}
-	if (SystemStatus.Electrolysers[1].status.ElState == ElIdle) || (SystemStatus.Electrolysers[1].status.ElState == ElStandby) {
-		el2 = 0
-	} else {
-		el2 = float64(SystemStatus.Electrolysers[1].status.CurrentProductionRate)
-	}
-	rate := 0.0
-	if el1+el2 > 0 {
-		// ROUND((((A3+B3)-59)/14)*9.9, 0)
-		rate = math.Round((((el1 + el2) - 59) / 14) * 9.9)
-	}
-	if _, err := fmt.Fprintf(w, `{"rate":%d}`, int8(rate)); err != nil {
+
+	if bytes, err := json.Marshal(jReturnData); err != nil {
 		var jErr JSONError
 		jErr.AddError("Electrolyser", err)
 		jErr.ReturnError(w, 500)
+	} else {
+		if _, err := fmt.Fprint(w, string(bytes)); err != nil {
+			var jErr JSONError
+			jErr.AddError("Electrolyser", err)
+			jErr.ReturnError(w, 500)
+		}
 	}
 }
 
+/**
+Returns a JSSON object containing all the current fuel cell errors decoded.
+*/
+func getFuelCellErrors(w http.ResponseWriter, _ *http.Request) {
+	sSQL := `select date_format(min(logged), "%Y/%m/%d %T") as logged,
+		IFNULL(DecodeFault('A', fc1FaultFlagA),'') as Flag0A,
+		IFNULL(DecodeFault('B', fc1FaultFlagB),'') as Flag0B,
+		IFNULL(DecodeFault('C', fc1FaultFlagC),'') as Flag0C,
+		IFNULL(DecodeFault('D', fc1FaultFlagD),'') as Flag0D,
+		IFNULL(DecodeFault('A', fc2FaultFlagA),'') as Flag1A,
+		IFNULL(DecodeFault('B', fc2FaultFlagB),'') as Flag1B,
+		IFNULL(DecodeFault('C', fc2FaultFlagC),'') as Flag1C,
+		IFNULL(DecodeFault('D', fc2FaultFlagD),'') as Flag1D
+		from firefly.logging
+		where (fc1FaultFlagA is not null
+	        OR fc1FaultFlagB is not null
+	        OR fc1FaultFlagC is not null
+		    OR fc1FaultFlagD is not null
+		    OR fc2FaultFlagA is not null
+			OR fc2FaultFlagB is not null
+			OR fc2FaultFlagC is not null
+			OR fc2FaultFlagD is not null)
+		group by unix_timestamp(logged) DIV 60
+		       , fc1FaultFlagA
+		       , fc1FaultFlagB 
+		       , fc1FaultFlagC 
+		       , fc1FaultFlagD
+		       , fc2FaultFlagA
+		       , fc2FaultFlagB 
+		       , fc2FaultFlagC 
+		       , fc2FaultFlagD
+		order by logged desc`
+
+	type Row struct {
+		Logged    string `json:"logged"`
+		FC1FaultA string `json:"fc0FaultA"`
+		FC1FaultB string `json:"fc0FaultB"`
+		FC1FaultC string `json:"fc0FaultC"`
+		FC1FaultD string `json:"fc0FaultD"`
+		FC2FaultA string `json:"fc1FaultA"`
+		FC2FaultB string `json:"fc1FaultB"`
+		FC2FaultC string `json:"fc1FaultC"`
+		FC2FaultD string `json:"fc1FaultD"`
+	}
+
+	var results []*Row
+
+	rows, err := pDB.Query(sSQL)
+	if err != nil {
+		if _, err := fmt.Fprintf(w, `{"error":"%s"}`, err.Error()); err != nil {
+			log.Println(err)
+		}
+	}
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("Error closing query - ", err)
+		}
+	}()
+	for rows.Next() {
+		row := new(Row)
+		if err := rows.Scan(&(row.Logged), &(row.FC1FaultA), &(row.FC1FaultB), &(row.FC1FaultC), &(row.FC1FaultD),
+			&(row.FC2FaultA), &(row.FC2FaultB), &(row.FC2FaultC), &(row.FC2FaultD)); err != nil {
+			log.Print(err)
+		} else {
+			results = append(results, row)
+		}
+	}
+	if JSON, err := json.Marshal(results); err != nil {
+		if _, err := fmt.Fprintf(w, `{"error":"%s"`, err.Error()); err != nil {
+			log.Println(err)
+		}
+	} else {
+		if _, err := fmt.Fprintf(w, string(JSON)); err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+/**
+Returns a JSON structure defining the current system contents
+*/
 func getSystem(w http.ResponseWriter, _ *http.Request) {
 	var jErr JSONError
 	var System struct {
@@ -2098,6 +2842,287 @@ func getSystem(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+/**
+setRestartPressure allows the system to program the electrolyser maximum restart pressur below which it will
+automatically start producing hydrogen.
+URL = /el/{device}/restartPressure/{bar}
+*/
+func setRestartPressure(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sDevice := vars["device"]
+	device, err := strconv.ParseInt(sDevice, 10, 8)
+	if err != nil {
+		var jErr JSONError
+		jErr.AddErrorString("Electrolyser", "Invalid device specified - device was not numeric")
+		jErr.ReturnError(w, 400)
+		log.Println(err)
+		return
+	}
+	sPressure := vars["bar"]
+	pressure, err := strconv.ParseFloat(sPressure, 32)
+	if err != nil {
+		var jErr JSONError
+		jErr.AddErrorString("Electrolyser", "Invalid pressure specified - pressure was not numeric")
+		jErr.ReturnError(w, 400)
+		log.Print(err)
+		return
+	}
+
+	if (device < 1) || (device > int64(len(SystemStatus.Electrolysers))) {
+		var jErr JSONError
+		jErr.AddErrorString("Electrolyser", "Invalid device specified")
+		jErr.ReturnError(w, 400)
+		return
+	}
+	if (pressure < 2.0) || (pressure > 35.0) {
+		var jErr JSONError
+		jErr.AddErrorString("Electrolyser", "Invalid pressure specified (2..35)")
+		jErr.ReturnError(w, 400)
+		return
+	}
+
+	err = SystemStatus.Electrolysers[device-1].SetRestartPressure(float32(pressure))
+	if err != nil {
+		var jErr JSONError
+		jErr.AddError("Electrolyser", err)
+		jErr.ReturnError(w, 500)
+	}
+	if _, err := fmt.Fprintf(w, "OK"); err != nil {
+		log.Println("Failed to send response -", err)
+	}
+}
+
+/**
+Returns a fprm allowing manual setting of the electrolyser rate
+*/
+func showRateSetter(w http.ResponseWriter, _ *http.Request) {
+	_, err := fmt.Fprint(w, `<html>
+	<head>
+		<title>Set Electrolyser Rate</title>
+		<script type="text/javascript">
+function postVal(){ 
+            // Creating a XHR object
+            let xhr = new XMLHttpRequest();
+            let url = "/el/setrate";
+       
+            // open a connection
+            xhr.open("POST", url, true);
+ 
+            // Set the request header i.e. which type of content we are sending
+            xhr.setRequestHeader("Content-Type", "application/json");
+ 
+            // Create a state change callback
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+ 
+                    // Print received data from server
+                    result.innerHTML = this.responseText;
+ 
+                }
+            };
+ 
+            // Converting JSON data to string
+            var data = JSON.stringify({ "rate": parseInt(document.getElementById("rate").value) });
+ 
+            // Sending data with the request
+            xhr.send(data);
+        }
+		</script>
+	</head>
+	<body>
+		<div>
+			<label for="rate">Rate</label><input id="rate" name="rate" type="number" min="0" max="100" step="1" value="0" /><br />
+			<input type="button" onclick="postVal()" value="Submit" />
+		</div>
+	</body>
+</html>`)
+	if err != nil {
+		log.Println("Failed to send the reate setter form -", err)
+	}
+}
+
+/**
+getPowerData returns a JSON array containing the energy used and stored based on the given date range
+*/
+func getPowerData(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	var from time.Time
+	var to time.Time
+	var jError JSONError
+	var sView string
+	var err error
+	type Row struct {
+		Logged string  `json:"logged"`
+		Used   float64 `json:"used"`
+		Stored float64 `json:"stored"`
+	}
+	var results []*Row
+	now := time.Now()
+
+	// Set the returned type to application/json
+	//	w.Header().Set("Content-Type", "application/json")
+	//	log.Println("Header set.")
+
+	// Make sure the from date can be parsed
+	if from, err = time.ParseInLocation("2006-1-2", vars["from"], now.Location()); err != nil {
+		log.Println(err)
+		jError.AddError("Power", err)
+		jError.ReturnError(w, 400)
+		return
+	}
+	//	log.Println("From time found")
+	// Make sure the to date can be parsed
+	if to, err = time.ParseInLocation("2006-1-2", vars["to"], now.Location()); err != nil {
+		jError.AddError("Power", err)
+		jError.ReturnError(w, 400)
+		return
+	}
+	//	log.Println("Got times")
+	// Make sure the dates are in the right order
+	if to.Before(from) {
+		jError.AddErrorString("Power", "from must be before to")
+		jError.ReturnError(w, 400)
+		return
+	}
+
+	// If from date is more than 30 days ago we need to get data from the archive table
+	if time.Now().Add(time.Hour * 24 * -30).Before(from) {
+		// Get from logging
+		if from == to {
+			// Only one day requested so get hourly data
+			sView = "HourlyPower"
+		} else {
+			// For multiple days we return daily totals
+			sView = "DailyPower"
+		}
+	} else {
+		// Get from logging_archive
+		if from == to {
+			// For a single day return the hourly date
+			sView = "HourlyPowerArchive"
+		} else if from.Add(time.Hour * 24 * 30).Before(to) {
+			// More than 30 days span so show monthly totals
+			sView = "MonthlyPowerArchive"
+		} else {
+			// Within 30 days so we show daily totals
+			sView = "DailyPowerArchive"
+		}
+	}
+
+	// Build the SQL to send to MariaDB
+	var sSql string
+	if from.Truncate(time.Hour*24) == time.Now().Truncate(time.Hour*24) {
+		// If the date requested is today, then grab the last 24 hours.
+		sSql = fmt.Sprintf("SELECT * FROM %s WHERE logged between UNIX_TIMESTAMP('%s') and UNIX_TIMESTAMP('%s')",
+			sView, time.Now().Add(time.Hour*-24).Format("2006-01-02 15:00"), time.Now().Format("2006-01-02 15:00"))
+	} else {
+		sSql = fmt.Sprintf("SELECT * FROM %s WHERE logged between UNIX_TIMESTAMP('%s') and UNIX_TIMESTAMP('%s')",
+			sView, from.Format("2006-01-02"), to.Add(time.Hour*24).Format("2006-01-02"))
+	}
+
+	// Get the data
+	rows, err := pDB.Query(sSql)
+	if err != nil {
+		if _, err := fmt.Fprintf(w, `{"error":"%s"}`, err.Error()); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
+	// Close the query when we are done
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("Error closing query - ", err)
+		}
+	}()
+
+	// For each row we put the values in a JSON struct then add it to the array
+	for rows.Next() {
+		row := new(Row)
+		if err := rows.Scan(&(row.Logged), &(row.Used), &(row.Stored)); err != nil {
+			log.Print(err)
+		} else {
+			results = append(results, row)
+		}
+	}
+
+	// Marshal the completed array into a byte array to send back tot he caller
+	if JSON, err := json.Marshal(results); err != nil {
+		if _, err := fmt.Fprintf(w, `{"error":"%s"`, err.Error()); err != nil {
+			log.Println(err)
+		}
+	} else {
+		// Send the byte array to the caller as text
+		if _, err := fmt.Fprintf(w, string(JSON)); err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func calculateCO2Saved(sql string) (float64, error) {
+	var value float64
+
+	rows, err := pDB.Query(sql)
+	if err != nil {
+		return 0.0, err
+	}
+
+	// Close the query when we are done
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Println("Error closing query - ", err)
+		}
+	}()
+
+	// For each row we put the values in a JSON struct then add it to the array
+	if rows.Next() {
+		if err := rows.Scan(&(value)); err != nil {
+			log.Print(err)
+			return 0.0, err
+		} else {
+			return math.Round(value*100) / 100, nil
+		}
+	}
+	log.Println("No rows returned in calculateCO2Saved")
+	return 0.0, fmt.Errorf("No rows were returned")
+}
+
+func getCO2Saved(w http.ResponseWriter, _ *http.Request) {
+	var Saved struct {
+		Active  float64 `json:"active"`
+		Archive float64 `json:"archive"`
+	}
+	var jErr JSONError
+	var err error
+
+	Saved.Active, err = calculateCO2Saved(`select ((sum(fc1OutputPower) + ifnull(sum(fc2OutputPower), 0)) / 3600000) * 0.16 as co2 from logging`)
+	if err != nil {
+		log.Println(err)
+		jErr.AddError("CO2", err)
+	}
+	Saved.Archive, err = calculateCO2Saved(`select ((sum(fc1OutputPower) + ifnull(sum(fc2OutputPower), 0)) / 60000) * 0.16 as fc2 from logging_archive`)
+	if err != nil {
+		log.Println(err)
+		jErr.AddError("CO2", err)
+	}
+	bytes, err := json.Marshal(Saved)
+	if err != nil {
+		jErr.AddError("CO2", err)
+	}
+
+	if len(jErr.Errors) > 0 {
+		jErr.ReturnError(w, 500)
+	} else {
+		_, err = fmt.Fprintf(w, string(bytes))
+		if err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+/**
+Defines all the available API end points
+*/
 func setUpWebSite() {
 	router := mux.NewRouter().StrictSlash(true)
 	router.HandleFunc("/ws", startDataWebSocket).Methods("GET")
@@ -2111,6 +3136,9 @@ func setUpWebSite() {
 	router.HandleFunc("/gas/off", setGasOff).Methods("GET", "POST")
 	router.HandleFunc("/gas/on", setGasOn).Methods("GET", "POST")
 
+	router.HandleFunc("/drain/off", setDrainOff).Methods("GET", "POST")
+	router.HandleFunc("/drain/on", setDrainOn).Methods("GET", "POST")
+
 	router.HandleFunc("/el/{device}/on", setElOn).Methods("GET", "POST")
 	router.HandleFunc("/el/{device}/off", setElOff).Methods("GET", "POST")
 
@@ -2120,8 +3148,16 @@ func setUpWebSite() {
 	router.HandleFunc("/el/{device}/stop", stopElectrolyser).Methods("GET", "POST")
 	router.HandleFunc("/el/{device}/reboot", rebootElectrolyser).Methods("GET", "POST")
 	router.HandleFunc("/el/{device}/preheat", preheatElectrolyser).Methods("GET", "POST")
+	router.HandleFunc("/el/{device}/restartPressure/{bar}", setRestartPressure).Methods("GET", "POST")
+	router.HandleFunc("/el/start", startAllElectrolysers).Methods("GET", "POST")
+	router.HandleFunc("/el/stop", stopAllElectrolysers).Methods("GET", "POST")
+	router.HandleFunc("/el/reboot", rebootAllElectrolysers).Methods("POST")
+	router.HandleFunc("/el/preheat", preheatAllElectrolysers).Methods("GET", "POST")
 	router.HandleFunc("/el/setrate", setElectrolyserRate).Methods("POST")
+	router.HandleFunc("/el/setrate", showRateSetter).Methods("GET")
 	router.HandleFunc("/el/getRate", getElectrolyserRate).Methods("GET")
+	router.HandleFunc("/el/on", setAllElOn).Methods("POST")
+	router.HandleFunc("/el/off", setAllElOff).Methods("POST")
 
 	router.HandleFunc("/dr/{device}/status", getDryerJsonStatus).Methods("GET")
 
@@ -2129,6 +3165,10 @@ func setUpWebSite() {
 	router.HandleFunc("/minStatus", getMinHtmlStatus).Methods("GET")
 	router.HandleFunc("/fcdata/{from}/{to}", getFuelCellHistory).Methods("GET")
 	router.HandleFunc("/eldata/{from}/{to}", getElectrolyserHistory).Methods("GET")
+	router.HandleFunc("/powerdata/{from}/{to}", getPowerData).Methods("GET")
+	router.HandleFunc("/co2saved", getCO2Saved).Methods("GET")
+
+	router.HandleFunc("/fcerrors", getFuelCellErrors).Methods("GET")
 
 	router.HandleFunc("/system", getSystem).Methods("GET")
 	fileServer := http.FileServer(neuteredFileSystem{http.Dir("./web")})
@@ -2137,6 +3177,9 @@ func setUpWebSite() {
 	log.Fatal(http.ListenAndServe(":20080", router))
 }
 
+/**
+Function to read the responses form the esm command line application
+*/
 func commandResponseReader(outPipe *bufio.Reader) {
 	for {
 		text, err := outPipe.ReadString('>')
@@ -2150,8 +3193,106 @@ func commandResponseReader(outPipe *bufio.Reader) {
 	}
 }
 
-func init() {
+/**
+Stop then turn the fuel cell off
+*/
+func turnOffFuelCell(device int) {
+	strCommand := fmt.Sprintf("fc stop %d", device)
+	log.Println("Stopping fuel cell ", device)
+	if _, err := sendCommand(strCommand); err != nil {
+		log.Print(err)
+	}
+	log.Println("Fuel cell", device, "Stopped")
+	time.Sleep(time.Second * 5)
+	log.Println("Turning off fuel cell ", device)
+	strCommand = fmt.Sprintf("fc off %d", device)
+	if _, err := sendCommand(strCommand); err != nil {
+		log.Print(err)
+	}
+	log.Println("Fuel cell", device, "turned off")
+}
 
+/**
+Turn on then start the fuel cell
+*/
+func turnOnFuelCell(device int) {
+	strCommand := fmt.Sprintf("fc on %d", device)
+	log.Println("Turning on fuel cell", device)
+	if _, err := sendCommand(strCommand); err != nil {
+		log.Print(err)
+	}
+	time.Sleep(time.Second * 15)
+	strCommand = fmt.Sprintf("fc run %d", device)
+	log.Println("Starting fuel cell", device)
+	if _, err := sendCommand(strCommand); err != nil {
+		log.Print(err)
+	}
+	SystemStatus.FuelCells[device].inRestart = false
+	log.Println("Fuel cell", device, "started")
+}
+
+/**
+Check the fuel cell to see if there are any errors and reset it if there are
+*/
+func checkFuelCell(fc *fuelCellStatus, device int) {
+	//	log.Println("Checking fuel cell ", device)
+	if !fc.inRestart {
+		//		log.Println("Not in restart...")
+		// We are not in a restart so check fo faults.
+		if fc.FaultFlagA != "" ||
+			fc.FaultFlagB != "" ||
+			fc.FaultFlagC != "" ||
+			fc.FaultFlagD != "" {
+			//			log.Printf("Errors found |%s|%s|%s|%s|\n", fc.FaultFlagA, fc.FaultFlagB, fc.FaultFlagC, fc.FaultFlagD)
+			// There is a fault so check the time
+			if fc.faultTime == *new(time.Time) {
+				// Time is blank so record the time and log the fault
+				fc.faultTime = time.Now()
+				log.Printf("Fuel Cell %d Error : %s|%s|%s|%s", device, fc.FaultFlagA, fc.FaultFlagB, fc.FaultFlagC, fc.FaultFlagD)
+			} else {
+				// how long has the fault been present?
+				t := time.Now().Add(0 - time.Minute)
+				// If it has been more than a minute, and we have only logged 3 faults,
+				// then restart the fuel cell.
+				if fc.faultTime.Before(t) && fc.numRestarts < 3 {
+					log.Println("Restarting fuel cell ", device)
+					fc.inRestart = true
+					fc.numRestarts++
+					go turnOffFuelCell(device)
+					time.AfterFunc(time.Minute*2, func() { turnOnFuelCell(device) })
+					err := smtp.SendMail("smtp.titan.email:587",
+						smtp.PlainAuth("", "pi@cedartechnology.com", "7444561", "smtp.titan.email"),
+						"pi@cedartechnology.com", []string{"ian.abercrombie@cedartechnology.com"}, []byte(`From: Aberhome1
+To: Ian.Abercrombie@cedartechnology.com
+Subject: Fuelcell Error encountered
+The fuel cell has reported an error. I am attempting to restart it.
+Fault A = `+strings.Join(getFuelCellError('A', fc.FaultFlagA), " : ")+`
+Fault B = `+strings.Join(getFuelCellError('B', fc.FaultFlagB), " : ")+`
+Fault C = `+strings.Join(getFuelCellError('C', fc.FaultFlagC), " : ")+`
+Fault D = `+strings.Join(getFuelCellError('D', fc.FaultFlagD), " : ")+`
+Anode Pressure = `+strconv.FormatFloat(fc.AnodePress, 'f', 3, 64)+`
+`))
+					if err != nil {
+						log.Println(err)
+					}
+				}
+				fc.clearTime = *new(time.Time)
+			}
+		} else {
+			fc.faultTime = *new(time.Time)
+			if fc.clearTime == fc.faultTime {
+				fc.clearTime = time.Now()
+			} else {
+				// If it has been 5 minutes since we saw the clear then set the numRestarts to 0
+				if time.Since(fc.clearTime) > (time.Minute * 5) {
+					fc.numRestarts = 0
+				}
+			}
+		}
+	}
+}
+
+func init() {
 	SystemStatus.valid = false // Prevents logging until we have some actual data
 	// Set up logging
 	logwriter, e := syslog.New(syslog.LOG_NOTICE, "FireflyWeb")
@@ -2166,10 +3307,17 @@ func init() {
 	flag.StringVar(&databasePassword, "dbPassword", "logger", "Database user password")
 	flag.StringVar(&databasePort, "dbPort", "3306", "Database port")
 	flag.StringVar(&executable, "exec", "./esm-3.17.13", "Path to the FireFly esm executable")
+	flag.BoolVar(&debug, "debug", false, "Set debug=true to output move information ot the log file")
 	var settingFile string
 	flag.StringVar(&settingFile, "settings", "/esm/system.config", "Path to the settings file")
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
+
+	if debug {
+		log.Println("running in debug mode")
+	} else {
+		log.Println("running in non-debug mode")
+	}
 
 	if err := settings.ReadSettings(settingFile); err != nil {
 		log.Println("Error reading settings file - ", err)
@@ -2207,6 +3355,29 @@ func init() {
 	go setUpWebSite()
 }
 
+func loggingLoop() {
+	done := make(chan bool)
+	loggingTime := time.NewTicker(time.Second)
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-loggingTime.C:
+			{
+				getSystemStatus()
+				if SystemStatus.valid {
+					logStatus()
+					for device, fc := range SystemStatus.FuelCells {
+						checkFuelCell(fc, device) // Check for errors and reset the fuel cell if there are any.
+					}
+				}
+				signal.Broadcast()
+			}
+		}
+	}
+}
+
 func main() {
 	startup := <-commandResponse
 	_, err := fmt.Println(startup)
@@ -2218,13 +3389,5 @@ func main() {
 	log.Println("FireflyWeb Starting with ", systemConfig.NumFc, " Fuelcells : ", systemConfig.NumEl, " Electrolysers : ", systemConfig.NumDryer, " Dryers")
 	signal = sync.NewCond(&sync.Mutex{})
 
-	for {
-		getSystemStatus()
-
-		if SystemStatus.valid {
-			logStatus()
-		}
-		signal.Broadcast()
-		time.Sleep(time.Second)
-	}
+	loggingLoop()
 }

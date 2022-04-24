@@ -40,8 +40,12 @@ func (j *JSONError) String() string {
 }
 
 func (j *JSONError) ReturnError(w http.ResponseWriter, retCode int) {
+	// Set the returned type to application/json
+	w.Header().Set("Content-Type", "application/json")
+	// Set the retCode
 	w.WriteHeader(retCode)
-	_, err := fmt.Print(w, j.String())
+	// Return the JSON content
+	_, err := fmt.Fprint(w, j.String())
 	if err != nil {
 		log.Println(err)
 	}

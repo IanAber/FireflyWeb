@@ -23,7 +23,7 @@
                     } else {
                         alert ("Failed to turn the electrolyser on");
                     }
-                    setTimeout(FetchRelays, 2000);
+                    setTimeout(FetchRelays, 1000);
                 })
             }
             function ElectrolyserOff(device) {
@@ -34,7 +34,95 @@
                         } else {
                             alert ("Failed to turn the electrolyser off");
                         }
-                        setTimeout(FetchRelays, 2000);
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function FuelCellOn(device) {
+                fetch("/fc/" + device + "/on")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Fuel cell is now ON");
+                        } else {
+                            alert ("Failed to turn the fuel cell on");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function FuelCellOff(device) {
+                fetch("/fc/" + device + "/off")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Fuel cell is now OFF");
+                        } else {
+                            alert ("Failed to turn the fuel cell off");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function FuelCellStart(device) {
+                fetch("/fc/" + device + "/run")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Fuel cell is now running");
+                        } else {
+                            alert ("Failed to start the fuel cell");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function FuelCellStop(device) {
+                fetch("/fc/" + device + "/stop")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Fuel cell is now stopped");
+                        } else {
+                            alert ("Failed to stop the fuel cell");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function GasOn() {
+                fetch("/gas/on")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Gas is now ON");
+                        } else {
+                            alert ("Failed to turn the gas on");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function GasOff() {
+                fetch("/gas/off")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Gas is now OFF");
+                        } else {
+                            alert ("Failed to turn the gas off");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function DrainOn() {
+                fetch("/drain/on")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Drain is now ON");
+                        } else {
+                            alert ("Failed to turn the drain on");
+                        }
+                        setTimeout(FetchRelays, 1000);
+                    })
+            }
+            function DrainOff() {
+                fetch("/drain/off")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            alert ("Drain is now OFF");
+                        } else {
+                            alert ("Failed to turn the drain off");
+                        }
+                        setTimeout(FetchRelays, 1000);
                     })
             }
             function FetchRelays() {
@@ -137,23 +225,25 @@
         <ul>
             <li class="status"><a href="/system.html">Gauges</a></li>
             <li class="status"><a href="/status">Get Status</a></li>
+            <li class="status"><a href="/FuelCellErrors.html">Show Fuel Cell Errors</a></li>
             <li class="operation" id="el1On"><a href="#" onclick="ElectrolyserOn(1)">Turn Electrolyser 1 On</a></li>
             <li class="operation" id="el1Off"><a href="#" onclick="ElectrolyserOff(1)">Turn Electrolyser 1 Off</a></li>
             <li class="operation" id="el2On"><a href="#" onclick="ElectrolyserOn(2)">Turn Electrolyser 2 On</a></li>
             <li class="operation" id="el2Off"><a href="#" onclick="ElectrolyserOff(2)">Turn Electrolyser 2 Off</a></li>
-            <li class="operation" id="fc1On"><a href="/fc/1/on">Turn Fuel Cell On</a></li>
-            <li class="operation" id="fc1Off"><a href="/fc/1/off">Turn Fuel Cell Off</a></li>
-            <li class="operation" id="fc2On"><a href="/fc/2/on">Turn Fuel Cell On</a></li>
-            <li class="operation" id="fc2Off"><a href="/fc/2/off">Turn Fuel Cell Off</a></li>
-            <li class="operation" id="fc1Run"><a href="/fc/1/run">Start Fuel Cell</a></li>
-            <li class="operation" id="fc1Stop"><a href="/fc/1/stop">Stop Fuel Cell</a><br /></li>
-            <li class="operation" id="fc2Run"><a href="/fc/2/run">Start Fuel Cell</a></li>
-            <li class="operation" id="fc2Stop"><a href="/fc/2/stop">Stop Fuel Cell</a><br /></li>
-            <li class="operation" id="gasOn"><a href="/gas/on">Turn the Gas to the Fuel Cell on.</a></li>
-            <li class="operation" id="gasOff"><a href="/gas/off">Turn the Gas to the Fuel Cell off.</a><br /></li>
-            <li class="operation" id="drainOn"><a href="/drain/on">Turn the Drain on.</a></li>
-            <li class="operation" id="drainOff"><a href="/drain/off">Turn the Drain off.</a><br /></li>
-
+            <li class="operation" id="fc1On"><a href="#" onclick="FuelCellOn(1)">Turn Fuel Cell On</a></li>
+            <li class="operation" id="fc1Off"><a href="#" onclick="FuelCellOff(1)">Turn Fuel Cell Off</a></li>
+            <li class="operation" id="fc2On"><a href="#" onclick="FuelCellOn(2)">Turn Fuel Cell On</a></li>
+            <li class="operation" id="fc2Off"><a href="#" onclick="FuelCellOff(2)">Turn Fuel Cell Off</a></li>
+            <li class="operation" id="fc1Run"><a href="#" onclick="FuelCellStart(1)">Start Fuel Cell</a></li>
+            <li class="operation" id="fc1Stop"><a href="#" onclick="FuelCellStop(1)">Stop Fuel Cell</a><br /></li>
+            <li class="operation" id="fc2Run"><a href="#" onclick="FuelCellStart(2)">Start Fuel Cell</a></li>
+            <li class="operation" id="fc2Stop"><a href="#" onclick="FuelCellStop(2)">Stop Fuel Cell</a><br /></li>
+            <li class="operation" id="gasOn"><a href="#" onclick="GasOn()">Turn the Gas to the Fuel Cell on.</a></li>
+            <li class="operation" id="gasOff"><a href="#" onclick="GasOff()">Turn the Gas to the Fuel Cell off.</a><br /></li>
+            <li class="operation" id="drainOn"><a href="#" onclick="DrainOn()">Turn the Drain on.</a></li>
+            <li class="operation" id="drainOff"><a href="#" onclick="DrainOff()">Turn the Drain off.</a><br /></li>
+            <li class="status"><a href="/eg_status.html">ElektrikGreen Status Page</a></li>
+            <li class="status"><a href="/FuelCellConfig.html">Edit the fuel cell configuration file</a></li>
         </ul>
     </body>
 </html>

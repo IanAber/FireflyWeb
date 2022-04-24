@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/simonvetter/modbus"
 	"html"
 	"log"
@@ -10,6 +12,16 @@ import (
 
 const ElIdle = 2
 const ElStandby = 4
+
+type jsonFloat32 float32
+
+func (value jsonFloat32) MarshalJSON() ([]byte, error) {
+	if value != value {
+		return json.Marshal(nil)
+	} else {
+		return json.Marshal(float32(value))
+	}
+}
 
 type electrolyserEvents struct {
 	count uint16
@@ -43,32 +55,33 @@ func (l electrolyteLevel) String() string {
 }
 
 type electrolyserStatus struct {
-	Device uint8
+	Device     uint8
+	SwitchedOn bool // Relay is turned on
 	//	Model                 string
 	//	Firmware              string
-	//	Serial                string
+	Serial                string             // 14
 	SystemState           uint16             // 18
-	H2Flow                float32            // 1008
+	H2Flow                jsonFloat32        // 1008
 	ElState               uint16             // 1200
 	ElectrolyteLevel      electrolyteLevel   // (7000 - 7003 four booleans)
-	StackCurrent          float32            // 7508
-	StackVoltage          float32            // 7510
-	InnerH2Pressure       float32            // 7512
-	OuterH2Pressure       float32            // 7514
-	WaterPressure         float32            // 7516
-	ElectrolyteTemp       float32            // 7518
-	CurrentProductionRate float32            // H1002
-	DefaultProductionRate float32            // H4396
-	MaxTankPressure       float32            // H4308
-	RestartPressure       float32            // H4310
+	StackCurrent          jsonFloat32        // 7508
+	StackVoltage          jsonFloat32        // 7510
+	InnerH2Pressure       jsonFloat32        // 7512
+	OuterH2Pressure       jsonFloat32        // 7514
+	WaterPressure         jsonFloat32        // 7516
+	ElectrolyteTemp       jsonFloat32        // 7518
+	CurrentProductionRate jsonFloat32        // H1002
+	DefaultProductionRate jsonFloat32        // H4396
+	MaxTankPressure       jsonFloat32        // H4308
+	RestartPressure       jsonFloat32        // H4310
 	Warnings              electrolyserEvents // 768
 	Errors                electrolyserEvents // 832
-	DryerTemp1            float32
-	DryerTemp2            float32
-	DryerTemp3            float32
-	DryerTemp4            float32
-	DryerInputPressure    float32
-	DryerOutputPressure   float32
+	DryerTemp1            jsonFloat32
+	DryerTemp2            jsonFloat32
+	DryerTemp3            jsonFloat32
+	DryerTemp4            jsonFloat32
+	DryerInputPressure    jsonFloat32
+	DryerOutputPressure   jsonFloat32
 	DryerErrors           uint16
 	DryerWarnings         uint16
 }
@@ -84,11 +97,12 @@ type Electrolyser struct {
 
 func NewElectrolyser(ip string) *Electrolyser {
 	e := new(Electrolyser)
-	e.OnOffTime = time.Now()
+	e.OnOffTime = time.Now().Add(0 - (time.Minute * 30))
 	e.ip = ip
 
+	log.Printf("Adding an electrolyser at [%s]\n", ip)
 	var config modbus.ClientConfiguration
-	config.Timeout = 1 * time.Second // 5 second timeout
+	config.Timeout = 1 * time.Second // 1 second timeout
 	config.URL = "tcp://" + ip + ":502"
 	if Client, err := modbus.NewClient(&config); err != nil {
 		if err != nil {
@@ -98,16 +112,82 @@ func NewElectrolyser(ip string) *Electrolyser {
 	} else {
 		e.Client = Client
 	}
-	if err := e.Client.Open(); err != nil {
-		log.Print("Modbus client.open error - ", err)
-	} else {
-		e.clientConnected = true
-	}
+	//	if err := e.Client.Open(); err != nil {
+	//		log.Print("Modbus client.open error - ", err)
+	//	} else {
+	//		e.clientConnected = true
+	//	}
 	return e
 }
 
+// Read and decode the serial number
+func (e *Electrolyser) ReadSerialNumber() string {
+	type Codes struct {
+		Site    string
+		Order   string
+		Chassis uint32
+		Day     uint8
+		Month   uint8
+		Year    uint16
+		Product string
+	}
+
+	var codes Codes
+
+	if !e.CheckConnected() {
+		return ""
+	}
+	serialCode, err := e.Client.ReadUint64(14, modbus.INPUT_REGISTER)
+	if err != nil {
+		log.Println("Error getting serial number - ", err)
+		return ""
+	}
+
+	//  1 bits - reserved, must be 0
+	// 10 bits - Product Unicode
+	// 11 bits - Year + Month
+	//  5 bits - Day
+	// 24 bits - Chassis Number
+	//  5 bits - Order
+	//  8 bits - Site
+
+	Site := uint8(serialCode & 0xff)
+	switch Site {
+	case 0:
+		codes.Site = "PI"
+	case 1:
+		codes.Site = "SA"
+	default:
+		codes.Site = "XX"
+	}
+
+	var Order [1]byte
+	Order[0] = byte((serialCode>>8)&0x1f) + 64
+	codes.Order = string(Order[:])
+
+	codes.Chassis = uint32((serialCode >> 13) & 0xffffff)
+	codes.Day = uint8((serialCode >> 37) & 0x1f)
+	yearMonth := (serialCode >> 42) & 0x7ff
+	codes.Year = uint16(yearMonth / 12)
+	codes.Month = uint8(yearMonth % 12)
+	Product := uint16((serialCode >> 53) & 0x3ff)
+
+	var unicode [2]byte
+	unicode[1] = byte(Product%32) + 64
+	unicode[0] = byte(Product/32) + 64
+	codes.Product = string(unicode[:])
+
+	return fmt.Sprintf("%s%02d%02d%02d%02d%s%s", codes.Product, codes.Year, codes.Month, codes.Day, codes.Chassis, codes.Order, codes.Site)
+}
+
+// AA 21 06 4 %!s(uint32=1) C%!(EXTRA string=PI)
+
+func (e *Electrolyser) IsSwitchedOn() bool {
+	return e.status.SwitchedOn
+}
+
 func (e *Electrolyser) CheckConnected() bool {
-	if e.Client == nil {
+	if (e.Client == nil) || (!e.status.SwitchedOn) {
 		return false
 	}
 	if !e.clientConnected {
@@ -164,12 +244,35 @@ func (e *Electrolyser) ReadValues() {
 		e.clientConnected = false
 		return
 	}
-	e.status.StackCurrent = values[0]
-	e.status.StackVoltage = values[1]
-	e.status.InnerH2Pressure = values[2]
-	e.status.OuterH2Pressure = values[3]
-	e.status.WaterPressure = values[4]
-	e.status.ElectrolyteTemp = values[5]
+	e.status.StackCurrent = jsonFloat32(values[0])
+	e.status.StackVoltage = jsonFloat32(values[1])
+	e.status.InnerH2Pressure = jsonFloat32(values[2])
+	e.status.OuterH2Pressure = jsonFloat32(values[3])
+	e.status.WaterPressure = jsonFloat32(values[4])
+	e.status.ElectrolyteTemp = jsonFloat32(values[5])
+
+	p, err := e.Client.ReadFloat32s(4308, 2, modbus.HOLDING_REGISTER)
+	if err != nil {
+		log.Print("Modbus reading max tank and restart pressure - ", err)
+		if err := e.Client.Close(); err != nil {
+			log.Print("Error closing modbus client - ", err)
+		}
+		e.clientConnected = false
+		return
+	}
+	e.status.MaxTankPressure = jsonFloat32(p[0])
+	e.status.RestartPressure = jsonFloat32(p[1])
+
+	r, err := e.Client.ReadFloat32(4396, modbus.HOLDING_REGISTER)
+	if err != nil {
+		log.Print("Modbus reading default production rate - ", err)
+		if err := e.Client.Close(); err != nil {
+			log.Print("Error closing modbus client - ", err)
+		}
+		e.clientConnected = false
+		return
+	}
+	e.status.DefaultProductionRate = jsonFloat32(r)
 
 	e.status.SystemState, err = e.Client.ReadRegister(18, modbus.INPUT_REGISTER)
 	if err != nil {
@@ -180,8 +283,8 @@ func (e *Electrolyser) ReadValues() {
 		e.clientConnected = false
 		return
 	}
-
-	e.status.H2Flow, err = e.Client.ReadFloat32(1008, modbus.INPUT_REGISTER)
+	h2f, err := e.Client.ReadFloat32(1008, modbus.INPUT_REGISTER)
+	e.status.H2Flow = jsonFloat32(h2f)
 	if err != nil {
 		log.Print("H2Flow error - ", err)
 		if err := e.Client.Close(); err != nil {
@@ -227,7 +330,9 @@ func (e *Electrolyser) ReadValues() {
 		e.status.ElectrolyteLevel = veryHigh
 	}
 
-	e.status.CurrentProductionRate, err = e.Client.ReadFloat32(1002, modbus.HOLDING_REGISTER)
+	rate, err := e.Client.ReadFloat32(1002, modbus.HOLDING_REGISTER)
+	//	log.Println("Current rate = ", rate)
+	e.status.CurrentProductionRate = jsonFloat32(rate)
 	if err != nil {
 		log.Print("Current Production error - ", err)
 		if err := e.Client.Close(); err != nil {
@@ -248,12 +353,14 @@ func (e *Electrolyser) ReadValues() {
 		e.clientConnected = false
 		return
 	}
-	e.status.DryerTemp1 = dryer[0]
-	e.status.DryerTemp2 = dryer[1]
-	e.status.DryerTemp3 = dryer[2]
-	e.status.DryerTemp4 = dryer[3]
-	e.status.DryerInputPressure = dryer[4]
-	e.status.DryerOutputPressure = dryer[5]
+
+	e.status.DryerTemp1 = jsonFloat32(dryer[0])
+	e.status.DryerTemp2 = jsonFloat32(dryer[1])
+	e.status.DryerTemp3 = jsonFloat32(dryer[2])
+	e.status.DryerTemp4 = jsonFloat32(dryer[3])
+
+	e.status.DryerInputPressure = jsonFloat32(dryer[4])
+	e.status.DryerOutputPressure = jsonFloat32(dryer[5])
 
 	dryerErrors, err := e.Client.ReadRegisters(6000, 2, modbus.INPUT_REGISTER)
 	if err != nil {
@@ -266,6 +373,9 @@ func (e *Electrolyser) ReadValues() {
 	}
 	e.status.DryerErrors = dryerErrors[0]
 	e.status.DryerWarnings = dryerErrors[1]
+	if e.status.Serial == "" {
+		e.status.Serial = e.ReadSerialNumber()
+	}
 }
 
 func (e *Electrolyser) GetSystemState() string {
@@ -562,6 +672,60 @@ func (e *Electrolyser) SetProduction(rate uint8) {
 	}
 }
 
+func (e *Electrolyser) SetRestartPressure(pressure float32) error {
+	if !e.CheckConnected() {
+		return fmt.Errorf("electrolyser is not turned on")
+	}
+
+	// Check configuration status
+	status, err := e.Client.ReadRegister(4000, modbus.INPUT_REGISTER)
+	if err != nil {
+		log.Println("Cannot establish configuration status - ", err)
+		if err := e.Client.Close(); err != nil {
+			log.Print("Error closing modbus client - ", err)
+		}
+		e.clientConnected = false
+		return fmt.Errorf("unable to set the restart pressure for the electrolyser. See the log file for more detail")
+	}
+	if status != 0 {
+		log.Println("configuration is already in progress")
+		return fmt.Errorf("configuration is already in progress")
+	}
+
+	//Begin configuration
+	err = e.Client.WriteRegister(4000, 1)
+	if err != nil {
+		log.Println("Cannot start configuration - ", err)
+		return fmt.Errorf("start configuration failed")
+	}
+	status, err = e.Client.ReadRegister(4000, modbus.INPUT_REGISTER)
+	if err != nil {
+		log.Println("Cannot establish configuration status after configuration start - ", err)
+		return fmt.Errorf("unable to set the restart pressure for the electrolyser. See the log file for more detail")
+	}
+	if status == 0 {
+		log.Println("Configuration did not start.")
+		return fmt.Errorf("configuration failed to start")
+	}
+
+	err = e.Client.WriteFloat32(4310, pressure)
+	if err != nil {
+		log.Print("Error setting electrolyser restart pressure - ", err)
+		if err := e.Client.Close(); err != nil {
+			log.Print("Error closing modbus client - ", err)
+		}
+		e.clientConnected = false
+		return fmt.Errorf("unable to set the restart pressure for the electrolyser. See the log file for more detail")
+	}
+
+	err = e.Client.WriteRegister(4001, 1)
+	if err != nil {
+		log.Println("Commit configuration changes failed - ", err)
+		return fmt.Errorf("unable to commit the restart pressure change for the electrolyser. See the log file for more detail")
+	}
+	return nil
+}
+
 func (e *Electrolyser) Start() {
 	if !e.CheckConnected() {
 		return
@@ -594,13 +758,19 @@ func (e *Electrolyser) Preheat() {
 	if !e.CheckConnected() {
 		return
 	}
-	err := e.Client.WriteRegister(1014, 1)
-	if err != nil {
-		log.Print("Preheat Request failed - ", err)
-		if err := e.Client.Close(); err != nil {
-			log.Print("Error closing modbus client - ", err)
+	if e.status.ElectrolyteTemp < 26 {
+		err := e.Client.WriteRegister(1014, 1)
+		if err != nil {
+			log.Print("Preheat Request failed - ", err)
+			if err := e.Client.Close(); err != nil {
+				log.Print("Error closing modbus client - ", err)
+			}
+			e.clientConnected = false
+		} else {
+			if debug {
+				log.Println("Preheat request ignored as temperature is already ", e.status.ElectrolyteTemp, "C")
+			}
 		}
-		e.clientConnected = false
 	}
 }
 

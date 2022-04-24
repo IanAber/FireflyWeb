@@ -1,0 +1,30 @@
+<html lang="en">
+<head>
+    <title>Set the electrolyser rate</title>
+    <script type="text/javascript">
+        function sendForm() {
+            let rate = document.getElementById("rate").value;
+            let xmlhttp = new XMLHttpRequest();
+            xmlhttp.open("POST", "/el/setrate", true);
+            xmlhttp.onreadystatechange = function () { //Call a function when the state changes.
+                if (xmlhttp.readyState === 4 && xmlhttp.status === 200) {
+                    alert(xmlhttp.responseText);
+                }
+                window.location = "/setRate.html";
+            };
+            let jData = {"rate":parseInt(document.getElementById("rate").value, 10)}
+            xmlhttp.send(JSON.stringify(jData));
+        }
+    </script>
+</head>
+<body>
+<div>
+    <h2>Set Production Rate</h2>
+    <form>
+        <label for="rate">Rate</label>
+        <input id="rate" name="rate" />
+        <button type="button" onclick="sendForm()">Submit</button>
+    </form>
+</div>
+</body>
+</html>

@@ -70,7 +70,7 @@
                     return;
                 }
             }
-            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/rate");
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/setrate");
             xhr.onreadystatechange = function() { // Call a function when the state changes.
                 if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
                     alert("Set Rate returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
@@ -128,7 +128,7 @@
                     jsonData = JSON.parse(evt.data);
                     if (jsonData.Electrolysers[0].On) {
                         $("#el1").css({display:"unset"})
-                        $("#el1_on").css({display:"none"})
+                        $("#el1_off").css({display:"none"})
                         if(el1.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
                             sCaption = jsonData.Electrolysers[0].Flow.toFixed(1) + " NL/Hour";
                             el1.jqxGauge({caption:{value:sCaption}});
@@ -149,11 +149,11 @@
                         el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
                     } else {
                         $("#el1").css({display:"none"})
-                        $("#el1_on").css({display:"unset"})
+                        $("#el1_off").css({display:"unset"})
                     }
                     if(jsonData.Electrolysers[1].On) {
                         $("#el2").css({display:"unset"})
-                        $("#el2_on").css({display:"none"})
+                        $("#el2_off").css({display:"none"})
                         if(el2.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
                             sCaption = jsonData.Electrolysers[1].Flow.toFixed(1) + " NL/Hour";
                             el2.jqxGauge({caption:{value:sCaption}});
@@ -175,7 +175,7 @@
                         el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
                     } else {
                         $("#el2").css({display:"none"})
-                        $("#el2_on").css({display:"unset"})
+                        $("#el2_off").css({display:"unset"})
 
                     }
 
@@ -190,6 +190,16 @@
                             fc1Label.text("Fuel Cell 1 (OFF)")
                         } else {
                             fc1Label.text("Fuel Cell 1 (" + jsonData.FuelCells[0].Output.toFixed(0) + " Watts)");
+                        }
+                        $("#fuelCell1Alarm").text(jsonData.FuelCells[0].Alarm);
+                        if (jsonData.FuelCells[0].Alarm !== "") {
+                            fc1.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
+                            fc1.css("background-color", "red");
+                            fc1.jqxGauge({colorScheme:'scheme03'})
+                        } else {
+                            fc1.jqxGauge({ style: { fill: '#fcfcfcfc', stroke: '#00ff00' }})
+                            fc1.css("background-color", "transparent");
+                            fc1.jqxGauge({colorScheme:'scheme02'})
                         }
                     } else {
                         $("#fc1").css("display","none");
@@ -206,6 +216,16 @@
                             el2Label.text("Fuel Cell 2 (OFF)")
                         } else {
                             el2Label.text("Fuel Cell 2 (" + jsonData.FuelCells[1].Output.toFixed(0) + " Watts)");
+                        }
+                        $("#fuelCell2Alarm").innerText = jsonData.FuelCells[1].Alarm;
+                        if (jsonData.FuelCells[1].Alarm !== "") {
+                            fc2.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
+                            fc2.css("background-color", "red");
+                            fc2.jqxGauge({colorScheme:'scheme03'})
+                        } else {
+                            fc2.jqxGauge({ style: { fill: '#cccccc', stroke: '#eeeeee' }})
+                            fc2.css("background-color", "transparent");
+                            fc2.jqxGauge({colorScheme:'scheme02'})
                         }
                     } else {
                         $("#fc2").css("display","none");
@@ -413,7 +433,7 @@
                         </div>
                     </div>
                     <div class="dial_gauge" id="el1_off" style="display:none; width:100%">
-                        <h1>Electrolyer 1 is switched off</h1>
+                        <h1 style="text-align:center">Electrolyser 1 is switched off</h1>
                     </div>
                 </div>
                 <div style="width:50%; float:left">
@@ -426,8 +446,8 @@
                             <h2 id="electrolyser2Label" style="text-align:center">Electrolyser 2</h2>
                         </div>
                     </div>
-                    <div class="dial_gauge" id="el2_on" style="display:none; width:100%">
-                        <h1>Electrolyer 2 is switched off</h1>
+                    <div class="dial_gauge" id="el2_off" style="display:none; width:100%">
+                        <h1 style="text-align:center">Electrolyser 2 is switched off</h1>
                     </div>
                 </div>
             </div>
@@ -438,6 +458,7 @@
                     </div>
                     <div>
                         <h2 id="FuelCell1Label" style="text-align:center">Fuel Cell 1</h2>
+                        <div id="FuelCell1Alarm"></div>
                     </div>
                 </div>
                 <div id="fc2" class="dial_gauge">
@@ -446,6 +467,7 @@
                     </div>
                     <div>
                         <h2 id="FuelCell2Label" style="text-align:center">Fuel Cell 2</h2>
+                        <div id="fuelCell2Alarm"></div>
                     </div>
                 </div>
             </div>

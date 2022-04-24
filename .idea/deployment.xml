@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" promptOnRemoteOverwrite="CHECK_TIMESTAMP" serverName="Firefly" overwriteAll="false" deleteMissingItems="true" createEmptyFolders="true" preserveFilePermissions="true" filePermissions="420" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true" notifyRemoteChanges="true">
+  <component name="PublishConfigData" autoUpload="Always" promptOnRemoteOverwrite="CHECK_TIMESTAMP" serverName="Firefly" createEmptyFolders="true" preserveFilePermissions="true" filePermissions="420" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true" notifyRemoteChanges="true">
     <serverData>
       <paths name="Firefly">
         <serverdata>

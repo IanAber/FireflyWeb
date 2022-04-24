@@ -1,0 +1,499 @@
+<!doctype html>
+<!--suppress JSSuspiciousNameCombination -->
+<html lang="en">
+<head>
+    <title id="Description">ElektrikGreen Firefly Status</title>
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.base.css" type="text/css" />
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.energyblue.css" type="text/css" />
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.orange.css" type="text/css" />
+    <link rel="stylesheet" href="/jqwidgets/styles/jqx.web.css" type="text/css" />
+    <link rel="stylesheet" href="css/jgauge.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="css/jquery-ui.min.css">
+    <script type="text/javascript" src="/scripts/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="scripts/jquery-ui.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxcore.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdraw.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdata.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxgauge.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxbuttons.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxslider.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxchart.core.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxdatetimeinput.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxcalendar.js"></script>
+    <script type="text/javascript" src="/jqwidgets/jqxloader.js"></script>
+    <script type="text/javascript">
+
+        let powerTimeOut;
+        let co2Timeout;
+//        var start = new Date();
+//        start.setSeconds(0);
+//        start.setMinutes(0);
+//         start.setHours(0);
+//         var end = new Date(start);
+//         end.setHours(23);
+//         end.setMinutes(59);
+//         end.setSeconds(59);
+        let timeResolution = true;  // Set to false if using only dates
+
+//        function buildURL() {
+//            end = new Date();
+//            start = new Date(end - document.getElementById("timeRange").value);
+//            return buildURLForTimes(start, end);
+//        }
+
+        function enableElectrolyser(nDevice) {
+            let xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/on");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function disableElectrolyser(nDevice) {
+            let xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "el/" + nDevice + "/off");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Disable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function setElectrolyserRate(nDevice , rate ) {
+            let xhr = new XMLHttpRequest();
+            if (rate < 60) {
+                rate = 0;
+                if (!confirm("Are you sure you want to stop this electrolyser?")) {
+                    return;
+                }
+            }
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/setrate");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Set Rate returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); // Header
+            xhr.send("rate=" + rate);
+        }
+
+        function startElectrolyser(nDevice) {
+            let xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/start");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function stopElectrolyser(nDevice) {
+            let xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/stop");
+            xhr.onreadystatechange = function() { // Call a function when the state changes.
+                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
+                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
+                }
+            }
+            xhr.send();
+        }
+
+        function receiveStatus() {
+            let  Data = document.getElementById("Data");
+            let url = "ws://" + window.location.host + "/ws";
+            let conn = new WebSocket(url);
+            let el = $("#Electrolyser");
+            let tank = $("#pressureLevel");
+            let fc = $('#FuelCell');
+            let tankLabel = $("#pressureLabel");
+            conn.onclose = function() {
+                Data.textContent = 'Connection closed';
+            }
+            conn.onmessage = function(evt) {
+                try{
+                    let jsonData = JSON.parse(evt.data);
+//                    let genKw = jsonData.Electrolysers[0].Flow;
+                    let genKw = jsonData.Electrolysers[0].Flow;
+                    if (jsonData.Electrolysers.length > 1) {
+                        genKw += jsonData.Electrolysers[1].Flow
+                    }
+                    genKw = (genKw * 1.33) / 1000;
+                    if(el.jqxGauge('value') !== genKw) {
+                        let sCaption = "Storing " + genKw.toFixed(1) + "kW";
+                        el.jqxGauge({caption:{value:sCaption}});
+                        el.val(genKw);
+                    }
+
+                    let kw = jsonData.FuelCells[0].Output / 1000;
+                    if (jsonData.FuelCells.length > 1) {
+                        kw += jsonData.FuelCells[1].Output / 1000
+                    }
+                    if (kw < 0) kw = 0;
+
+                    if(fc.jqxGauge('value') !== kw) {
+                        fc.show();
+                        let sCaption = "Using " + kw.toFixed(2) + "kW";
+                        fc.jqxGauge({caption:{value:sCaption}});
+                        fc.val(kw);
+                    }
+
+                    let tankPercent = ((jsonData.Gas - 1) / 35) * 100;
+                    let tankY = 300 - 3 * tankPercent;
+
+                    tank.attr("y", (450 - (4.5 * tankPercent)) + 100);
+                    tank.attr("height", 4.5 * tankPercent);
+                    tankLabel.prop('title', jsonData.Gas.toFixed(1) + " bar");
+
+
+                } catch (e) {
+                    console.log (e + "\r\nData = " + evt.data);
+                }
+            }
+        }
+
+        function setUpGauges(){
+            let width = (0.9 * document.documentElement.clientWidth) / 3;
+            let height = (0.9 * document.documentElement.clientHeight) / 2;
+            if (height > width) {
+                // noinspection JSSuspiciousNameCombination
+                height = width;
+            } else {
+                width = height;
+            }
+            $("#gaugeRow").css("height", height);
+            let el = $('#ElectrolyserContainer')
+            let fc = $('#FuelCell1Container')
+            $('#Electrolyser').jqxGauge({
+                border: { size: '10%', style: { stroke: '#00ff00'}, visible: true, showGradient: true },
+                style: {fill: '#fcfcfcfc', stroke: '#00ff00'},
+                ticksMinor: {interval: 0.1, size: '5%'},
+                ticksMajor: {interval: 0.5,size: '9%'},
+                max: 1.5,
+                min: 0,
+                labels: {interval: 0.5},
+                value: 0,
+                animationDuration: 800,
+                cap: {size: '5%', style: { fill: '#ff0000', stroke: '#00ff00' }, visible: true},
+                caption: {value: '' +
+                        'Storing kW', position: 'bottom', offset: [0, 10], visible: true},
+                width: width,
+                height: height
+            });
+
+            $('#FuelCell').jqxGauge({
+                border: { size: '10%', style: { stroke: '#ff0000'}, visible: true, showGradient: true },
+                style: {fill: '#fcfcfcfc', stroke: '#ff0000'},
+//                style: { fill: '#ffd0d0', stroke: '#ef8080' },
+                ranges: [{startValue: 0, endValue: 2.5, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
+                    {startValue: 2.5, endValue: 3.75, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
+                    {startValue: 3.75, endValue: 4.25, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
+                ticksMinor: {interval: .1, size: '5%'},
+                ticksMajor: {interval: 1,size: '9%'},
+                max: 4.25,
+                min: 0,
+                labels: {interval: 1},
+                value: 0,
+                animationDuration: 800,
+                cap: {size: '5%', style: { fill: '#ff0000', stroke: '#00ff00' }, visible: true},
+                caption: {value: '' +
+                        'Using kW', position: 'bottom', offset: [0, 10], visible: true},
+                width: width,
+                height: height
+            });
+
+            if (el.width() > el.height()) {
+               el.css("width","39vh");
+               fc.css("width","39vh");
+            } else {
+                el.css("height", "39vw")
+                fc.css("height", "39vw")
+            }
+            receiveStatus();
+        }
+
+        function buildURLForTimes(start, end) {
+            return encodeURI("/powerdata/"
+                + start.getFullYear() + "-" + (start.getMonth() + 1) + "-" + start.getDate()
+                + "/" + end.getFullYear() + "-" + (end.getMonth() + 1) + "-" +  end.getDate());
+        }
+
+        function buildURL() {
+            let range = $("#dates").jqxDateTimeInput('getRange');
+            let start = range.from;
+            let end = range.to;
+            let today = new Date(Date.now());
+            if ((today - start) < 86400000) {
+                currentSettings.title = "Energy - Past 24 hours";
+            } else {
+                if (end - start < 86400000) {
+                    if (today - start < 172800000) {
+                        currentSettings.title = "Energy for Yesterday";
+                    } else {
+                        currentSettings.title = "Energy on " + start.toDateString();
+                    }
+                } else {
+                    currentSettings.title = "Energy from " + start.toDateString() + " to " + end.toDateString();
+                }
+            }
+            return buildURLForTimes(start, end);
+        }
+
+        function xAxisFormatFunction(value, itemIndex, series, group) {
+            if (value === currentSettings.categoryAxis.minValue || value === currentSettings.categoryAxis.maxValue) return "";
+            let dt = new Date(value * 1000);
+            dt.setSeconds(0);
+            if (timeResolution) {
+                return dt.toLocaleString("en-US",{timeStyle:"short", hour12: false});
+            } else {
+                return dt.toLocaleDateString();
+            }
+
+        }
+
+        let currentSettings = {
+            title: "Energy",
+            description: "Energy stored and used in kWhr.",
+            enableAnimations: false,
+            animationDuration: 1000,
+            enableAxisTextAnimation: true,
+            showLegend: true,
+            padding: {left: 5, top: 5, right: 5, bottom: 5},
+            titlePadding: {left: 90, top: 0, right: 0, bottom: 3},
+            categoryAxis: {
+                dataField: 'logged',
+                showGridLines: true,
+                textRotationAngle: 285,
+                unitInterval: 3600,
+                formatFunction: xAxisFormatFunction,
+                minValue: 0,
+                maxValue: 1000
+            },
+            colorScheme: 'scheme01',
+            seriesGroups: [{
+                type: 'column',
+                valueAxis: {
+                    interval: 1,
+                    gridLines: {
+                        visible: true,
+                        step: 1,
+                    },
+                    labels: {
+                        formatSettings: {
+                            decimalPlaces: 0,
+                        },
+                        visible: true,
+                        step: 1,
+                    },
+                    minValue: 0,
+                    maxValue: 4000,
+                    description: 'kWhr',
+                    gridLinesColor: '#2020D0'
+                },
+                series: [{
+                    dataField: 'used',
+                    displayText: 'Used kWhr',
+                    lineColor: '#D02020',
+                    fillColor: '#D02020',
+                },{
+                    dataField: 'stored',
+                    displayText: 'Stored kWhr',
+                    lineColor: '#20D020',
+                    fillColor: '#20D020',
+                }]
+            }]
+        };
+
+        function setupChart () {
+            let chart = $("#chartContainer");
+            chart.css('width', (1.8 * document.documentElement.clientWidth) / 3);
+            chart.css('height', (0.9 * document.documentElement.clientHeight) / 2);
+
+            let urlObject = new URL(document.location.href);
+            // prepare jqxChart settings
+            let today = new Date(Date.now());
+
+            chart.jqxChart(currentSettings);
+            let dates = $("#dates");
+            dates.jqxDateTimeInput({
+                theme: "arctic",
+                width: '200px',
+                height: '25px',
+                selectionMode: 'range'
+            });
+            dates.jqxDateTimeInput({dropDownVerticalAlignment: 'top', max: today});
+            dates.css("float", "left");
+            dates.on('valueChanged', function (event)
+                {
+                    getEnergy();
+                });
+            $("#spinner").jqxLoader({ theme:'energyblue', width: 300, height: 120, imagePosition: 'top', text:'Fetching data Please stand by...' });
+        }
+
+        // Used to find the maximum height of the bars needed
+        let maxY = 0
+        function setMaxY(element) {
+            if (maxY < element.used) maxY = element.used;
+            if (maxY < element.stored) maxY = element.stored;
+        }
+
+        function refresh(url) {
+            fetch(url)
+                .then( function(response) {
+                    if (response.status === 200) {
+                        response.json()
+                            .then(function(data) {
+                                let range = $("#dates").jqxDateTimeInput('getRange');
+                                let start = range.from;
+                                let end = range.to + 24;
+                                timeResolution = (range.from.toDateString() === range.to.toDateString());
+                                let intervalSecs = 3600;
+                                if (!timeResolution) {
+                                    intervalSecs = 86400;
+                                }
+                                if (typeof data.error != "undefined") {
+                                    alert(data.error);
+                                } else {
+                                    if (data.length === 0) {
+                                        console.log("No Data!");
+                                        return;
+                                    }
+                                    // Find the maximum value and set the graph range to suit
+                                    maxY = 0;
+                                    data.forEach(setMaxY);
+
+                                    currentSettings.categoryAxis.minValue = parseInt(data[0].logged) - intervalSecs;
+                                    currentSettings.categoryAxis.maxValue = parseInt(data[data.length - 1].logged) + intervalSecs;
+                                    currentSettings.categoryAxis.unitInterval = intervalSecs;
+                                    currentSettings.seriesGroups[0].valueAxis.maxValue = maxY;
+                                    let chart = $('#chartContainer');
+                                    chart.jqxChart(currentSettings);
+                                    chart.jqxChart({source:data});
+                                    chart.jqxChart('update');
+
+                                }
+                            });
+                    } else {
+                        console.log("Server returned ", response.status)
+                    }
+                    $("#spinner").jqxLoader('close');
+                })
+                .catch(function(err) {
+                    if(err.name === "TypeError" && err.message !== "cancelled") {
+                        alert('Energy Fetch Error :-S' + err.message);
+                    }
+                });
+            // Refresh every 5 minutes
+            powerTimeOut = setTimeout(getEnergy, 300000);
+        }
+
+        // Populate the chart
+        function getEnergy() {
+            clearTimeout(powerTimeOut);
+            powerTimeOut = 0;
+            $("#spinner").jqxLoader('open');
+            refresh(buildURL());
+        }
+
+        // Populate CO2
+        function refreshCO2() {
+            fetch("/co2saved")
+                .then( function(response) {
+                    if (response.status === 200) {
+                        response.json()
+                            .then(function(data) {
+                                let total = data.active + data.archive;
+                                $("#co2").text(total.toFixed(2) + " tons of CO2 saved");
+                            });
+                    } else {
+                        console.log("Server returned ", response.status)
+                    }
+                })
+               .catch(function(err) {
+                    if(err.name === "TypeError" && err.message !== "cancelled") {
+                        alert('Energy Fetch Error :-S' + err.message);
+                    }
+                });
+            // Refresh every 60 seconds
+            let co2TimeOut = setTimeout(refreshCO2, 60000);
+        }
+
+        $(document).ready(function () {
+            let pressure = $("#pressureSvg");
+            pressure.css('width', document.documentElement.clientWidth / 3);
+            pressure.css('height', document.documentElement.clientHeight * 0.8);
+            setupChart();
+            setUpGauges();
+            getEnergy();
+            refreshCO2();
+        });
+    </script>
+
+</head>
+    <body>
+        <div>
+            <div style="height:94vh" >
+                <div style="float:left; width:63vw; height:95vh">
+                    <div id="gaugeRow" class="gauge_row" style="width:100%; height:40%">
+                        <div style="width:50%; float:left">
+                            <div id="FuelCellContainer" style="position:static; margin:0 auto; width:39vw; height:39vh">
+                                <div id='FuelCell' style="width:29vw"></div><br />
+                            </div>
+                        </div>
+                        <div style="width:50%; float:left">
+                            <div id="ElectrolyserContainer"  style="position:static; margin:0 auto; width:39vw; height:39vh">
+                                <div id='Electrolyser' style="width:29vw"></div><br />
+                            </div>
+                        </div>
+                    </div>
+                    <div id="chartContainer" style="width:100%; height:60%" ></div>
+                </div>
+                <div id="pressure" class="pressure" style="float:left; width:30vw; height: 90vh">
+                    <div style="width:100%; text-align:center">
+                        <a href="https://elektrikgreen.com" >
+                            <img alt="ElektrikGreen Logo" src="http://www.elektrikgreen.com/wp-content/uploads/2020/05/Elektrik-Green-New-Refinement-Landscape-Transparent-e1590693678779.png" />
+                        </a>
+                    </div>
+                    <div>
+                        <svg id="pressureSvg" width="100%" viewbox="0, 0, 360, 600">
+                            <defs>
+                                <linearGradient id="grad1" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:rgb(175,175,225);stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:rgb(0,0,255);stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <polygon points="0,100 150,0 300,100" style="fill:rgb(200,50,50);stroke-width:0;stroke:black" />
+                            <rect x="25" y="100" width="250" height="450" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <rect id="pressureLevel" x="25" y="250" width="250" height="350" fill="url(#grad1)" style="stroke-width:0;stroke:rgb(0,0,0)" />
+                            <rect x="40" y="180" width="60" height="110" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <rect x="120" y="180" width="60" height="110" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <rect x="200" y="180" width="60" height="110" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <rect x="40" y="375" width="60" height="110" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <rect x="200" y="375" width="60" height="110" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <rect x="125" y="375" width="50" height="175" style="fill:transparent;stroke-width:2;stroke:black" />
+                            <circle cx="168" cy="475" r="4" style="stroke-width:2;stroke:black" />
+                            <line x1="285" y1="100" x2="285" y2="550" stroke-dasharray="1 30" style="stroke:black;stroke-width:10"/>
+                            <text x="300" y="105">96kWhr</text>
+                            <text x="300" y="360">48kWhr</text>
+                            Sorry, your browser does not support inline SVG.
+                        </svg><br />
+                        <h2 id="pressureLabel" style="text-align:center">Hydrogen</h2><br />
+                        <h2 id="co2" style="text-align:center">tons of CO2 saved</h2>
+                    </div>
+                </div>
+            </div>
+            <div style="text-align:center; height: 6vh; clear: both">
+                <div id="customDateTimes" style="float:left">
+                    <span style="float:left;font-size:larger">Date Range:&nbsp;</span>
+                    <div id="dates"></div>
+                </div>
+                <div id="spinner"></div>
+            </div>
+        </div>
+    </body>
+</html>
+
