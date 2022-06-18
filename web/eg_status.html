@@ -21,25 +21,38 @@
     <script type="text/javascript" src="/jqwidgets/jqxdatetimeinput.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxcalendar.js"></script>
     <script type="text/javascript" src="/jqwidgets/jqxloader.js"></script>
+    <style>
+        svg.line {
+            width:100%;
+            height:100%;
+        }
+        path.storing{
+            display: none;
+            animation: dash 1s linear forwards infinite;
+        }
+        path.using{
+            display: none;
+            animation: dash 1s linear forwards infinite;
+        }
+        @keyframes dash {
+            from {
+                stroke-dashoffset: 10;
+            }
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        table.tblChart {
+            margin:auto;
+            float:none;
+        }
+    </style>
     <script type="text/javascript">
 
         let powerTimeOut;
         let co2Timeout;
-//        var start = new Date();
-//        start.setSeconds(0);
-//        start.setMinutes(0);
-//         start.setHours(0);
-//         var end = new Date(start);
-//         end.setHours(23);
-//         end.setMinutes(59);
-//         end.setSeconds(59);
         let timeResolution = true;  // Set to false if using only dates
-
-//        function buildURL() {
-//            end = new Date();
-//            start = new Date(end - document.getElementById("timeRange").value);
-//            return buildURLForTimes(start, end);
-//        }
+        let avgDailyEnergy = 4000;   // This gets filled in later
 
         function enableElectrolyser(nDevice) {
             let xhr = new XMLHttpRequest();
@@ -122,11 +135,17 @@
                     if (jsonData.Electrolysers.length > 1) {
                         genKw += jsonData.Electrolysers[1].Flow
                     }
-                    genKw = (genKw * 1.33) / 1000;
+                    genKw = (genKw * 1.207) / 1000;
                     if(el.jqxGauge('value') !== genKw) {
                         let sCaption = "Storing " + genKw.toFixed(1) + "kW";
                         el.jqxGauge({caption:{value:sCaption}});
                         el.val(genKw);
+                        if (genKw > 0) {
+                            // Turn on the using stream graphic
+                            $('path.storing').show();
+                        } else {
+                            $('path.storing').hide();
+                        }
                     }
 
                     let kw = jsonData.FuelCells[0].Output / 1000;
@@ -140,6 +159,12 @@
                         let sCaption = "Using " + kw.toFixed(2) + "kW";
                         fc.jqxGauge({caption:{value:sCaption}});
                         fc.val(kw);
+                        if (kw > 0) {
+                            // Turn on the using stream graphic
+                            $('path.using').show();
+                        } else {
+                            $('path.using').hide();
+                        }
                     }
 
                     let tankPercent = ((jsonData.Gas - 1) / 35) * 100;
@@ -148,6 +173,8 @@
                     tank.attr("y", (450 - (4.5 * tankPercent)) + 100);
                     tank.attr("height", 4.5 * tankPercent);
                     tankLabel.prop('title', jsonData.Gas.toFixed(1) + " bar");
+                    reserve = Math.round(((jsonData.Gas / 35) * 900000) / avgDailyEnergy) / 10;
+                    tankLabel.text("Hydrogen - " + reserve + " days");
 
 
                 } catch (e) {
@@ -167,7 +194,7 @@
             }
             $("#gaugeRow").css("height", height);
             let el = $('#ElectrolyserContainer')
-            let fc = $('#FuelCell1Container')
+            let fc = $('#FuelCellContainer')
             $('#Electrolyser').jqxGauge({
                 border: { size: '10%', style: { stroke: '#00ff00'}, visible: true, showGradient: true },
                 style: {fill: '#fcfcfcfc', stroke: '#00ff00'},
@@ -374,7 +401,6 @@
                                     chart.jqxChart(currentSettings);
                                     chart.jqxChart({source:data});
                                     chart.jqxChart('update');
-
                                 }
                             });
                     } else {
@@ -407,7 +433,10 @@
                         response.json()
                             .then(function(data) {
                                 let total = data.active + data.archive;
-                                $("#co2").text(total.toFixed(2) + " tons of CO2 saved");
+                                $("#co2").text((total * 2000).toFixed(0) + " pounds of CO2 saved");
+                                let since = new Date(Date.parse(data.since.replace(" ", "T")));
+                                $("#co2Since").text("since " + since.toLocaleString());
+                                avgDailyEnergy = data.avgPower;
                             });
                     } else {
                         console.log("Server returned ", response.status)
@@ -432,7 +461,6 @@
             refreshCO2();
         });
     </script>
-
 </head>
     <body>
         <div>
@@ -441,14 +469,22 @@
                     <div id="gaugeRow" class="gauge_row" style="width:100%; height:40%">
                         <div style="width:50%; float:left">
                             <div id="FuelCellContainer" style="position:static; margin:0 auto; width:39vw; height:39vh">
-                                <div id='FuelCell' style="width:29vw"></div><br />
+                                <div id='FuelCell' style="width:29vw; margin:auto"></div><br />
                             </div>
                         </div>
                         <div style="width:50%; float:left">
                             <div id="ElectrolyserContainer"  style="position:static; margin:0 auto; width:39vw; height:39vh">
-                                <div id='Electrolyser' style="width:29vw"></div><br />
+                                <div id='Electrolyser' style="width:29vw; margin:auto"></div><br />
                             </div>
                         </div>
+                    </div>
+                    <div id="flow" style="clear:both; height:25px; width:100%" >
+                        <svg class="line" viewbox="0 0 500 10" preserveAspectRatio="none">
+                            <path class="storing" fill="transparent" stroke-dashoffset="0" stroke="#20D020" stroke-dasharray="1, 1" stroke-width="2" d="M375 1 L375 5"></path>
+                            <path class="storing" fill="transparent" stroke-dashoffset="0" stroke="#20D020" stroke-dasharray="5, 5" stroke-width="2" d="M375 5 L495 5"></path>
+                            <path class="using" fill="transparent" stroke-dashoffset="10" stroke="#D02020" stroke-dasharray="1, 1" stroke-width="2" d="M125 9 L125 1"></path>
+                            <path class="using" fill="transparent" stroke-dashoffset="10" stroke="#D02020" stroke-dasharray="5, 5" stroke-width="2" d="M495 9 L125 9"></path>
+                        </svg>
                     </div>
                     <div id="chartContainer" style="width:100%; height:60%" ></div>
                 </div>
@@ -477,12 +513,13 @@
                             <rect x="125" y="375" width="50" height="175" style="fill:transparent;stroke-width:2;stroke:black" />
                             <circle cx="168" cy="475" r="4" style="stroke-width:2;stroke:black" />
                             <line x1="285" y1="100" x2="285" y2="550" stroke-dasharray="1 30" style="stroke:black;stroke-width:10"/>
-                            <text x="300" y="105">96kWhr</text>
-                            <text x="300" y="360">48kWhr</text>
+                            <text x="300" y="105">90kWhr</text>
+                            <text x="300" y="360">45kWhr</text>
                             Sorry, your browser does not support inline SVG.
-                        </svg><br />
-                        <h2 id="pressureLabel" style="text-align:center">Hydrogen</h2><br />
-                        <h2 id="co2" style="text-align:center">tons of CO2 saved</h2>
+                        </svg>
+                        <h2 id="pressureLabel" style="text-align:center">Hydrogen</h2>
+                        <h2 id="co2" style="text-align:center">pounds of CO2 saved</h2>
+                        <h3 id="co2Since" style="text-align:center"></h3>
                     </div>
                 </div>
             </div>
@@ -493,6 +530,8 @@
                 </div>
                 <div id="spinner"></div>
             </div>
+            <a href="/">Main Menu</a>
+
         </div>
     </body>
 </html>

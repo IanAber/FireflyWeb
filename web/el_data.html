@@ -185,6 +185,32 @@
 						lineColor: '#20D020',
 						fillColor: '#20D020',
 					}]
+				}, {
+					type: 'spline',
+					valueAxis: {
+						interval: 1,
+						gridLines: {
+							visible: true,
+							step: 1,
+						},
+						labels: {
+							formatSettings: {
+								decimalPlaces: 0,
+							},
+							visible: true,
+							step: 1,
+						},
+						minValue: 37,
+						maxValue: 47,
+						description: 'Stack Voltage',
+						gridLinesColor: '#808020'
+					},
+					series: [{
+						dataField: 'EL1StackVoltage',
+						displayText: 'Stack Voltage',
+						lineColor: '#808020',
+						fillColor: '#808020',
+					}]
 				}]
 			};
 
@@ -194,6 +220,7 @@
 				currentSettings.seriesGroups[1].series[0].dataField = 'EL2Temp';
 				currentSettings.seriesGroups[2].series[0].dataField = 'EL2StackCurrent';
 				currentSettings.seriesGroups[3].series[0].dataField = 'EL2H2Flow';
+				currentSettings.seriesGroups[4].series[0].dataField = 'EL2StackVoltage';
 			}
 			$('#currentChartContainer').jqxChart(currentSettings);
 			startAt = $("#startAt");

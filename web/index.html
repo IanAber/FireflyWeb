@@ -8,10 +8,15 @@
         <link rel="stylesheet" type="text/css" href="css/jquery-ui.min.css">
         <style>
             li.status {
-                padding-bottom:25px
+                padding-bottom:1vh;
+                font-size:3vh
             }
             li.operation {
-                padding-bottom:5px
+                padding-bottom:0.5vh;
+                font-size:3vh
+            }
+            h1 {
+                font-size:4vh
             }
         </style>
         <script type="text/javascript">
@@ -226,6 +231,9 @@
             <li class="status"><a href="/system.html">Gauges</a></li>
             <li class="status"><a href="/status">Get Status</a></li>
             <li class="status"><a href="/FuelCellErrors.html">Show Fuel Cell Errors</a></li>
+            <li class="status"><a href="/fc_detail.html">Fuel Cell Detail</a></li>
+            <li class="status"><a href="/el_detail.html">Electrolyser Detail</a></li>
+            <li class="status"><a href="/candump.html">Export a CAN .trc file</a></li>
             <li class="operation" id="el1On"><a href="#" onclick="ElectrolyserOn(1)">Turn Electrolyser 1 On</a></li>
             <li class="operation" id="el1Off"><a href="#" onclick="ElectrolyserOff(1)">Turn Electrolyser 1 Off</a></li>
             <li class="operation" id="el2On"><a href="#" onclick="ElectrolyserOn(2)">Turn Electrolyser 2 On</a></li>
@@ -244,6 +252,8 @@
             <li class="operation" id="drainOff"><a href="#" onclick="DrainOff()">Turn the Drain off.</a><br /></li>
             <li class="status"><a href="/eg_status.html">ElektrikGreen Status Page</a></li>
             <li class="status"><a href="/FuelCellConfig.html">Edit the fuel cell configuration file</a></li>
+            <li class="status"><a href="/el/setrate">Set Electrolyser Rate</a></li>
+            <li class="status"><a href="/settings">Change Settings</a></li>
         </ul>
     </body>
 </html>

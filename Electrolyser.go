@@ -11,6 +11,7 @@ import (
 )
 
 const ElIdle = 2
+const ElSteady = 3
 const ElStandby = 4
 
 type jsonFloat32 float32
@@ -89,6 +90,8 @@ type electrolyserStatus struct {
 type Electrolyser struct {
 	status             electrolyserStatus
 	OnOffTime          time.Time
+	OffDelayTime       time.Time
+	OffRequested       *time.Timer
 	ip                 string
 	Client             *modbus.ModbusClient
 	clientConnected    bool
@@ -98,6 +101,8 @@ type Electrolyser struct {
 func NewElectrolyser(ip string) *Electrolyser {
 	e := new(Electrolyser)
 	e.OnOffTime = time.Now().Add(0 - (time.Minute * 30))
+	e.OffDelayTime = time.Now()
+	e.OffRequested = nil
 	e.ip = ip
 
 	log.Printf("Adding an electrolyser at [%s]\n", ip)
@@ -112,12 +117,16 @@ func NewElectrolyser(ip string) *Electrolyser {
 	} else {
 		e.Client = Client
 	}
-	//	if err := e.Client.Open(); err != nil {
-	//		log.Print("Modbus client.open error - ", err)
-	//	} else {
-	//		e.clientConnected = true
-	//	}
 	return e
+}
+
+func (e *Electrolyser) GetRate() int {
+	r := int(e.status.CurrentProductionRate)
+	if (e.OffRequested != nil) && (r == 60) {
+		return 0
+	} else {
+		return r
+	}
 }
 
 // Read and decode the serial number
@@ -654,20 +663,49 @@ func (e *Electrolyser) GetDryerWarnings() []string {
 	return decodeDryerMessage(e.status.DryerWarnings)
 }
 
+func (e *Electrolyser) SendRateToElectrolyser(rate float32) error {
+	err := e.Client.WriteFloat32(1002, float32(rate))
+	if err != nil {
+		log.Print("Error setting production rate - ", err)
+		if err := e.Client.Close(); err != nil {
+			log.Print("Error closing modbus client - ", err)
+		}
+		e.clientConnected = false
+	}
+	return err
+}
+
+// SetProduction sets the elecctrolyser to the rate given 0, 60..100
 func (e *Electrolyser) SetProduction(rate uint8) {
+	if debug {
+		log.Println("Set electrolyser", e.ip, "to", rate)
+	}
 	if !e.CheckConnected() {
 		return
 	}
 	if rate < 60 {
-		e.Stop()
+		// If we are reducing below 60% set to 60 and stop the electrolyser
+		if err := e.SendRateToElectrolyser(60.0); err != nil {
+			log.Println(err)
+		}
+		// Start a delayed stop
+		e.Stop(false)
 	} else {
-		err := e.Client.WriteFloat32(1002, float32(rate))
-		if err != nil {
-			log.Print("Error setting production rate - ", err)
-			if err := e.Client.Close(); err != nil {
-				log.Print("Error closing modbus client - ", err)
+		// 60% or more we should send the rate and clear the off timer
+		if err := e.SendRateToElectrolyser(float32(rate)); err != nil {
+			log.Println(err)
+		}
+		// If there is a pending delayed stop then kill the timer
+		if e.OffRequested != nil {
+			e.OffRequested.Stop()
+			e.OffRequested = nil
+		}
+		// If the electrolyser is in Idle then start it.
+		if e.status.ElState == ElIdle {
+			if debug {
+				log.Println("Electrolyser is idle so sending a start command.")
 			}
-			e.clientConnected = false
+			e.Start(false)
 		}
 	}
 }
@@ -726,32 +764,96 @@ func (e *Electrolyser) SetRestartPressure(pressure float32) error {
 	return nil
 }
 
-func (e *Electrolyser) Start() {
+//Start -  Attempt to start the electrolyser - return true if successful
+// overrideHolOff will force an immediate start
+func (e *Electrolyser) Start(overrideHoldOff bool) bool {
 	if !e.CheckConnected() {
-		return
+		return false
 	}
-	err := e.Client.WriteRegister(1000, 1)
-	if err != nil {
-		log.Print("Error starting Electrolyser - ", err)
-		if err := e.Client.Close(); err != nil {
-			log.Print("Error closing modbus client - ", err)
+	if overrideHoldOff || e.OnOffTime.Add(params.ElectrolyserHoldOffTime).Before(time.Now()) {
+		err := e.Client.WriteRegister(1000, 1)
+		if err != nil {
+			log.Print("Error starting Electrolyser - ", err)
+			if err := e.Client.Close(); err != nil {
+				log.Print("Error closing modbus client - ", err)
+			}
+			e.clientConnected = false
+			return false
+		} else {
+			// If successful mark the time so we don't try and stop and start too quickly
+			if debug {
+				log.Println("Electrolyser", e.ip, "started")
+			}
+			e.OnOffTime = time.Now()
+			return true
 		}
-		e.clientConnected = false
+	} else {
+		if debug {
+			log.Println("Electrolyser", e.ip, "not started. In holdoff until ", e.OnOffTime.Add(params.ElectrolyserHoldOffTime))
+		}
+	}
+	return false
+}
+
+func (e *Electrolyser) setDelayedStop() {
+	if e.OffRequested == nil {
+
+		tDelay := time.Now().Add(params.ElectrolyserOffDelay)
+		tDoNotstopBefore := e.OnOffTime.Add(params.ElectrolyserHoldOnTime)
+		// Set a timer to fire after the delay time or after the minimum on time has elapsed
+		if tDelay.After(tDoNotstopBefore) {
+			e.OffRequested = time.NewTimer(params.ElectrolyserOffDelay)
+		} else {
+			e.OffRequested = time.NewTimer(tDoNotstopBefore.Sub(time.Now()))
+		}
+		select {
+		case <-e.OffRequested.C:
+			e.Stop(true)
+		}
 	}
 }
 
-func (e *Electrolyser) Stop() {
+//Stop -  Attempt to stop the electrolyser - return true if successful
+// overrideHolOff will force an immediate stop
+func (e *Electrolyser) Stop(overrideHoldOff bool) bool {
 	if !e.CheckConnected() {
-		return
+		return false
 	}
-	err := e.Client.WriteRegister(1000, 0)
-	if err != nil {
-		log.Print("Error stopping electrolyser - ", err)
-		if err := e.Client.Close(); err != nil {
-			log.Print("Error closing modbus client - ", err)
+	// Attempt to stop the electrolyser
+	if overrideHoldOff {
+		// Stop immediately
+		if e.OffRequested != nil {
+			// Kill the timer
+			e.OffRequested.Stop()
+			e.OffRequested = nil
+			// Send the stop command
+			err := e.Client.WriteRegister(1000, 0)
+			if err != nil {
+				log.Print("Error stopping electrolyser - ", err)
+				if err := e.Client.Close(); err != nil {
+					log.Print("Error closing modbus client - ", err)
+				}
+				e.clientConnected = false
+			} else {
+				// If successful mark the time so we don't immediately try and start it again
+				e.OnOffTime = time.Now()
+				if debug {
+					log.Println("Electrolyser", e.ip, "stopped.")
+				}
+				return true
+			}
+
 		}
-		e.clientConnected = false
+	} else {
+		// If not immediate start a timer if it is not already running and the electrolyser is outputting
+		if e.OffRequested == nil && e.status.ElState == ElSteady {
+			go e.setDelayedStop()
+			if debug {
+				log.Println("Electrolyser", e.ip, "timer started to stop production")
+			}
+		}
 	}
+	return false
 }
 
 func (e *Electrolyser) Preheat() {

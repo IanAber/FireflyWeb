@@ -180,13 +180,24 @@
                     }
 
                     if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 0)) {
-                        if (jsonData.FuelCells[0].Alarm !== "") {
+                        switch (jsonData.FuelCells[0].FaultLevel) {
+                            case 0 : fc1.css("background-color", "transparent");
+                                break;
+                            case 1 : fc1.css("background-color", "#d0F0d0");
+                                break;
+                            case 2 : fc1.css("background-color", "#a0F0a0");
+                                break;
+                            case 3 : fc1.css("background-color", "#F0d0d0");
+                                break;
+                            default : fc1.css("background-color", "#F0a0a0");
+                                break;
+                        }
+                        if (jsonData.FuelCells[0].FaultLevel > 2) {
                             fc1.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
-                            fc1.css("background-color", "red");
+                            fc1.css("background-color", "orange");
                             fc1.jqxGauge({colorScheme:'scheme03'})
                         } else {
                             fc1.jqxGauge({ style: { fill: '#fcfcfcfc', stroke: '#00ff00' }})
-                            fc1.css("background-color", "transparent");
                             fc1.jqxGauge({colorScheme:'scheme02'})
                         }
                         if(fc1.jqxGauge('value') !== jsonData.FuelCells[0].Output) {

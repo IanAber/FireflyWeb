@@ -41,6 +41,7 @@
                 theme: 'energyblue',
                 source: adapter,
                 columnsresize:true,
+                selectionmode:'singlecell',
                 columns: [
                     { text: 'Logged', datafield: 'logged', width: 100 },
                     { text: 'FC0-FlagA', datafield: 'fc0FaultA', width: 200 },
@@ -53,7 +54,11 @@
                     { text: 'FC1-FlagD', datafield: 'fc1FaultD', width: 200 }
                 ]
             });
-            $('#jqxgrid').on('bindingcomplete', function (event) {
+            let grid = $('#jqxgrid');
+            grid.on('celldoubleclick', function (event) {
+                alert("Doubleclicked - " + source.dataFields[event.args.rowindex].fc1FaultA);
+            });
+            grid.on('bindingcomplete', function (event) {
                 $('#jqxgrid').jqxGrid('autoresizecolumns');
             });
 

@@ -1,0 +1,173 @@
+<html lang="en">
+    <head>
+        <title>Dump the CAN buffer content to a TRC file</title>
+        <link rel="stylesheet" href="/jqwidgets/styles/jqx.base.css" type="text/css" />
+        <link rel="stylesheet" href="/jqwidgets/styles/jqx.web.css" type="text/css" />
+        <script type="text/javascript" src="/scripts/jquery-3.6.0.min.js"></script>
+        <script type="text/javascript" src="/jqwidgets/jqxcore.js"></script>
+        <script type="text/javascript" src="/jqwidgets/jqxdraw.js"></script>
+        <script type="text/javascript" src="/jqwidgets/jqxdata.js"></script>
+        <script type="text/javascript" src="/jqwidgets/jqxdatetimeinput.js"></script>
+        <script type="text/javascript" src="/jqwidgets/jqxcalendar.js"></script>
+        <script type="text/javascript">
+            function executeDump() {
+                start = $("#startAt").jqxDateTimeInput('value');
+                end = $("#endAt").jqxDateTimeInput('value');
+                url = encodeURI("./candump/" + start.getFullYear() + "-" + (start.getMonth() + 1) + "-" + start.getDate() + "T" + start.getHours() + ":" + start.getMinutes() + "/"
+                    + end.getFullYear() + "-" + (end.getMonth() + 1) + "-" + end.getDate() + "T" + end.getHours() + ":" + end.getMinutes());
+                var element = document.createElement('a');
+                element.setAttribute('href', url);
+                filename = "CANDUMP-" + start.getFullYear() + "-" + start.getMonth() + "-" + start.getDate() + "-" + start.getHours() + "-" + start.getMinutes() + ".trc";
+                element.setAttribute('download', filename);
+                document.body.appendChild(element);
+                element.click();
+            }
+
+            function executeEventDump() {
+                event = $("#events").val();
+                url = encodeURI("./candumpEvent/" + event);
+                var element = document.createElement('a');
+                element.setAttribute('href', url);
+                filename = "CANDUMP-" + event.replace(":", "-") + ".trc";
+                element.setAttribute('download', filename);
+                document.body.appendChild(element);
+                element.click();
+            }
+
+            function startLogging() {
+                end = $("#logUntil").jqxDateTimeInput('value');
+                url = encodeURI("./canrecord/" + end.getFullYear() + "-" + (end.getMonth() + 1) + "-" + end.getDate() + "T" + end.getHours() + ":" + end.getMinutes() + ":" + end.getSeconds())
+                window.location = url
+            }
+
+            $(document).ready(function () {
+                start = new Date();
+                start.setHours(0);
+                start.setMinutes(0);
+                start.setSeconds(0);
+                start.setMilliseconds(0);
+                end = new Date();
+                end.setHours(23);
+                end.setMinutes(59);
+                end.setSeconds(59);
+                end.setMilliseconds(0);
+                endLog = new Date();
+                endLog.setTime(endLog.getTime() + (10*60*1000));   // Set to ten minutes of logging from now.
+                sa = $("#startAt");
+                sa.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+                sa.jqxDateTimeInput({ dropDownVerticalAlignment: 'bottom'});
+                sa.css("float", "left");
+                sa.jqxDateTimeInput('setDate', start);
+                ea = $("#endAt");
+                ea.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+                ea.jqxDateTimeInput({ dropDownVerticalAlignment: 'bottom'});
+                ea.css("float", "left");
+                ea.jqxDateTimeInput('setDate', end);
+                refreshEventList();
+                until = $("#logUntil");
+                until.jqxDateTimeInput({ theme: "arctic", formatString: "F", showTimeButton: true, width: '300px', height: '25px' });
+                until.jqxDateTimeInput({ dropDownVerticalAlignment: 'top'});
+                until.css("float", "left");
+                until.jqxDateTimeInput('setDate', endLog);
+            });
+
+            function refreshEventList() {
+                fetch("./canEvents")
+                    .then( function(response) {
+                        if (response.status === 200) {
+                            response.json()
+                                .then(function(data) {
+                                    $('#events').empty();
+                                    data.event.forEach(function (event) {
+                                        optText = event;
+                                        optValue = event.replace(" ", "T");
+                                        $('#events').append(`<option value="${optValue}">${optText}</option>`);
+                                    });
+                                });
+                        } else {
+                            console.log("Server returned ", response.status)
+                        }
+                    })
+                    .catch(function(err) {
+                        if(err.name === "TypeError" && err.message !== "cancelled") {
+                            alert('Event List Fetch Error :-S' + err.message);
+                        }
+                    });
+            }
+
+        </script>
+        <style>
+              .egButton {
+                  -moz-box-shadow:inset 5px 5px 0px -2px #a6827e;
+                  -webkit-box-shadow:inset 5px 5px 0px -2px #a6827e;
+                  box-shadow:inset 5px 5px 0px -2px #a6827e;
+                  background:-webkit-gradient(linear, left top, left bottom, color-stop(0.05, #7d5d3b), color-stop(1, #634b30));
+                  background:-moz-linear-gradient(top, #7d5d3b 5%, #634b30 100%);
+                  background:-webkit-linear-gradient(top, #7d5d3b 5%, #634b30 100%);
+                  background:-o-linear-gradient(top, #7d5d3b 5%, #634b30 100%);
+                  background:-ms-linear-gradient(top, #7d5d3b 5%, #634b30 100%);
+                  background:linear-gradient(to bottom, #7d5d3b 5%, #634b30 100%);
+                  filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#7d5d3b', endColorstr='#634b30',GradientType=0);
+                  background-color:#7d5d3b;
+                  -webkit-border-radius:12px;
+                  -moz-border-radius:12px;
+                  border-radius:12px;
+                  border:1px solid #54381e;
+                  display:inline-block;
+                  cursor:pointer;
+                  color:#ffffff;
+                  font-family:Arial;
+                  font-size:16px;
+                  padding:12px 26px;
+                  text-decoration:none;
+              }
+              .egButton:hover {
+                  background:-webkit-gradient(linear, left top, left bottom, color-stop(0.05, #634b30), color-stop(1, #7d5d3b));
+                  background:-moz-linear-gradient(top, #634b30 5%, #7d5d3b 100%);
+                  background:-webkit-linear-gradient(top, #634b30 5%, #7d5d3b 100%);
+                  background:-o-linear-gradient(top, #634b30 5%, #7d5d3b 100%);
+                  background:-ms-linear-gradient(top, #634b30 5%, #7d5d3b 100%);
+                  background:linear-gradient(to bottom, #634b30 5%, #7d5d3b 100%);
+                  filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#634b30', endColorstr='#7d5d3b',GradientType=0);
+                  background-color:#634b30;
+              }
+              .egButton:active {
+                  position:relative;
+                  top:1px;
+              }
+        </style>
+    </head>
+    <body>
+        <div style="border-width: 1px; border-style: solid">
+            <div style="height:5vh">
+                <span style="float:left;font-size:larger">Start At:&nbsp;</span>
+                <div id="startAt"></div>
+            </div>
+            <div style="clear:both; height:5vh">
+                <span style="float:left;font-size:larger">End At:&nbsp;</span>
+                <div id="endAt"></div>
+            </div>
+            <div style="clear:both">
+                <button class="egButton" onClick="executeDump()" >Export TRC File</button>
+            </div>
+        </div>
+        <div style="border-width: 1px; border-style: solid">
+            <div style="height:5vh">
+                <label for="events" style="font-size:larger">Events</label>
+                <select id="events"></select>
+            </div>
+            <div style="clear:both">
+                <button class="egButton" onClick="executeEventDump()" >Export TRC File for Event</button>
+            </div>
+        </div>
+        <div style="border-width: 1px; border-style: solid">
+            <div style="clear:both;height:10vh">
+                <span style="float:left;font-size:larger">Log Until:&nbsp;</span>
+                <div id="logUntil"></div>
+            </div>
+            <div style="clear:both">
+                <button class="egButton" onClick="startLogging()" >Start On Demand Logging</button>
+            </div>
+        </div>
+    </body>
+</html>

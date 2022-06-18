@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Settings struct {
@@ -53,4 +55,44 @@ func (s *Settings) GetList(key string) ([]string, error) {
 		return nil, fmt.Errorf("%s not found in the settings file.", key)
 	}
 	return strings.Split(val, ",;"), nil
+}
+
+type JsonSettings struct {
+	ElectrolyserHoldOffTime   time.Duration `json:"electrolyserHoldOffTime"`
+	ElectrolyserHoldOnTime    time.Duration `json:"electrolyserHoldOnTime"`
+	ElectrolyserOffDelay      time.Duration `json:"electrolyserOffDelay"`
+	ElectrolyserShutDownDelay time.Duration `json:"electrolyserShutDownDelay"`
+}
+
+func NewJsonSettings() *JsonSettings {
+	s := new(JsonSettings)
+	s.ElectrolyserHoldOffTime = ELECTROLYSERHOLDOFFTIME
+	s.ElectrolyserHoldOnTime = ELECTROLYSERHOLDONTIME
+	s.ElectrolyserOffDelay = ELECTROLYSEROFFDELAYTIME
+	s.ElectrolyserShutDownDelay = ELECTROLYSERSHUTDOWNDELAY
+	return s
+}
+
+func (s *JsonSettings) ReadSettings(filepath string) error {
+	if file, err := ioutil.ReadFile(filepath); err != nil {
+		return err
+	} else {
+		if err := json.Unmarshal(file, s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *JsonSettings) WriteSettings(filepath string) error {
+	if bData, err := json.Marshal(s); err != nil {
+		log.Println("Error converting settings to text -", err)
+		return err
+	} else {
+		if err = ioutil.WriteFile(filepath, bData, 0644); err != nil {
+			log.Println("Error writing JSON settings file -", err)
+			return err
+		}
+	}
+	return nil
 }
