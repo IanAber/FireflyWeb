@@ -13,21 +13,24 @@ type errorObj struct {
 }
 
 type JSONError struct {
-	Errors []*errorObj
+	Success bool        `json:"success"`
+	Errors  []*errorObj `json:"errors"`
 }
 
-func (j *JSONError) AddErrorString(device string, err string) {
+func (j *JSONError) AddErrorString(device string, err string) error {
 	e := new(errorObj)
 	e.Device = device
 	e.Err = err
 	j.Errors = append(j.Errors, e)
+	return fmt.Errorf("Device : %s | error %s", device, err)
 }
 
-func (j *JSONError) AddError(device string, err error) {
+func (j *JSONError) AddError(device string, err error) error {
 	e := new(errorObj)
 	e.Device = device
 	e.Err = err.Error()
 	j.Errors = append(j.Errors, e)
+	return err
 }
 
 func (j *JSONError) String() string {
@@ -48,5 +51,27 @@ func (j *JSONError) ReturnError(w http.ResponseWriter, retCode int) {
 	_, err := fmt.Fprint(w, j.String())
 	if err != nil {
 		log.Println(err)
+	}
+}
+
+func ReturnJSONError(w http.ResponseWriter, device string, err error, httpReturnCode int, bLog bool) {
+	var jErr JSONError
+
+	_ = jErr.AddError(device, err)
+	jErr.Success = false
+	jErr.ReturnError(w, httpReturnCode)
+	if bLog {
+		log.Print(err)
+	}
+}
+
+func ReturnJSONErrorString(w http.ResponseWriter, device string, errStr string, httpReturnCode int, bLog bool) {
+	var jErr JSONError
+
+	err := jErr.AddErrorString(device, errStr)
+	jErr.Success = false
+	jErr.ReturnError(w, httpReturnCode)
+	if bLog {
+		log.Print(err)
 	}
 }

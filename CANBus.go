@@ -17,7 +17,7 @@ import (
 )
 
 // LoggerSQLStatement is the Logger SQL statement to save a 'CAN' frame
-const LoggerSQLStatement = `INSERT INTO firefly.CAN_Data(id, canData, Event) VALUES(?,?,?)`
+const LoggerSQLStatement = `INSERT INTO firefly.CAN_Data(id, canData, Event, OnDemand) VALUES(?,?,?,?)`
 
 type Frame struct { // CAN bus frames from the FCM804
 	id   uint32 // ID of the frame. The cell iD is in bits 0..2
@@ -25,6 +25,7 @@ type Frame struct { // CAN bus frames from the FCM804
 }
 
 type CANBus struct {
+	onDemandTime    time.Time          // The time for the OnDemand Log request
 	dataSet         [4096]Frame        // Ring buffer of frames in which to store incoling messages
 	ringStart       int                // Pointer to the start of the buffer
 	ringEnd         int                // pointer to the end of the buffer
@@ -44,6 +45,8 @@ type CANFaultDefinition struct {
 }
 
 var errorDefinitions map[uint16]CANFaultDefinition
+
+var clearBufferTimer *time.Timer
 
 func (pLogger *CANBus) loadFaultDefinitions() {
 	var err error
@@ -126,16 +129,40 @@ func (pLogger *CANBus) getMaxFaultLevel(faultA uint32, faultB uint32, faultC uin
 	return maxLevel, reboot
 }
 
+func (pLogger *CANBus) setEventDateTime() {
+	if pLogger.onDemandTime == *new(time.Time) {
+		pLogger.onDemandTime = time.Now()
+	}
+}
+
 // setOnDemandRecording will set the onDemandEnd date/time. Immediate logging of data will begin from this point until
 // the designated end time. Only 0x400 frames are recorded but these can be extracted and sent to Intelligent energy for analysis.
 func (pLogger *CANBus) setOnDemandRecording(until time.Time) {
+	//	pLogger.setEventDateTime()
 	pLogger.onDemandEnd = until
+}
+
+func (pLogger *CANBus) clearBuffers() {
+	for _, fc := range pLogger.fuelCell {
+		debugPrint("Clear fuel cell %d", fc.device)
+		fc.Clear()
+	}
 }
 
 // handleCANFrame figures out what to do with each CAN frame received
 func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 	var data uint64
-	var event sql.NullTime
+
+	// Ignore everything on the CAN bus during fuel cell maintenance
+	if params.FuelCellMaintenance {
+		return
+	}
+
+	//	Reset the timer
+	if clearBufferTimer == nil || !clearBufferTimer.Reset(time.Second*5) {
+		clearBufferTimer = time.AfterFunc(time.Second*5, pLogger.clearBuffers)
+	}
+
 	device := uint16(frm.ID & 7)
 	frameID := frm.ID & 0xFFFFFFF8
 	if (frameID != 0x400) && (frameID != 0x6f0) {
@@ -146,12 +173,11 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 			pLogger.fuelCell[device] = NewFCM804(pLogger, device)
 			fcm = pLogger.fuelCell[device]
 		}
+		fcm.LastUpdate = time.Now()
 		if fcm.ProcessFrame(frameID, frm.Data[:]) {
 			// We got a fault condition change, so we should wait until the current 0x400 frame sequence completes then log the buffer
 			pLogger.waitForLogger = true
-			if debug {
-				log.Println("Error found - Waiting for a full frame to recodrd the data.")
-			}
+			debugPrint("Error found - Waiting for a full frame to recodrd the data.")
 		}
 		// We only record 0x40x frames
 		return
@@ -161,11 +187,13 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 		return
 	}
 	// Set the last update time for the fuel cell
-	pLogger.fuelCell[device].LastUpdate = time.Now()
+	if len(pLogger.fuelCell) <= int(device) {
+		return
+	}
 	data = binary.BigEndian.Uint64(frm.Data[:])
 	// Don't mess with the buffer if we are writing it to the database
 	if !pLogger.saving {
-		if pLogger.onDemandEnd.Before(time.Now()) {
+		if pLogger.onDemandEnd.Before(time.Now()) && !params.FuelCellLogOnRun && !params.FuelCellLogOnEnable {
 			// We are past the onDemandEnd time so not continously logging to the database
 			pLogger.dataSet[pLogger.ringEnd].id = frm.ID
 			pLogger.dataSet[pLogger.ringEnd].data = data
@@ -184,7 +212,7 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 				}
 			}
 			if frm.Data[0] == 0x2E && pLogger.waitForLogger && pLogger.ringCount > 960 {
-				pLogger.logCanFrames()
+				//				pLogger.logCanFrames()
 				//} else {
 				//	if debug && pLogger.waitForLogger {
 				//		log.Println(frm.Data[0], pLogger.ringCount)
@@ -197,8 +225,7 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 			pLogger.ringEnd = 0
 			// Log the current frame to the database
 			if pDB != nil {
-				event.Valid = false // Set the event false if we are on demand logging
-				_, err := pDB.Exec(LoggerSQLStatement, frm.ID, data, event)
+				_, err := pDB.Exec(LoggerSQLStatement, frm.ID, data, pLogger.onDemandTime, true)
 				if err != nil {
 					log.Println(err)
 					if err := pDB.Close(); err != nil {
@@ -209,6 +236,7 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 					pLogger.ringEnd = 0
 					pLogger.saving = false
 					pLogger.onDemandEnd = time.Now()
+					pLogger.onDemandTime = *new(time.Time) // Clear the start time
 					return
 				}
 			}
@@ -226,7 +254,7 @@ func (pLogger *CANBus) logCanFrames() {
 		pLogger.saving = false
 		pLogger.waitForLogger = false
 	}()
-	if debug {
+	if params.DebugOutput {
 		log.Println("Log CAN data")
 	}
 	var err error
@@ -242,12 +270,12 @@ func (pLogger *CANBus) logCanFrames() {
 		}
 	}
 	pLogger.lastLoggedEvent = event.Time.Format("2006-01-02T15:04:05:06")
-	if debug {
+	if params.DebugOutput {
 		log.Println("Logging event - ", pLogger.lastLoggedEvent)
 	}
 
 	for {
-		_, err := pDB.Exec(LoggerSQLStatement, pLogger.dataSet[pLogger.ringStart].id, pLogger.dataSet[pLogger.ringStart].data, event)
+		_, err := pDB.Exec(LoggerSQLStatement, pLogger.dataSet[pLogger.ringStart].id, pLogger.dataSet[pLogger.ringStart].data, event, false)
 		if err != nil {
 			log.Println(err)
 			if err := pDB.Close(); err != nil {
@@ -268,12 +296,10 @@ func (pLogger *CANBus) logCanFrames() {
 
 // CanBusMonitor starts the CAN bus monitor and logger
 func (pLogger *CANBus) CanBusMonitor() {
-
 	for {
 		bus, err := can.NewBusForInterfaceWithName("can0")
 		if err != nil {
 			log.Println("CAN interface not available.", err)
-			//		log.Panicf("Error starting CAN interface - %s -\nSorry, I am giving up", err)
 		} else {
 			bus.SubscribeFunc(pLogger.handleCANFrame)
 			err = bus.ConnectAndPublish()
@@ -284,7 +310,6 @@ func (pLogger *CANBus) CanBusMonitor() {
 		// If something goes wrong sleep for 10 seconds and try again.
 		time.Sleep(time.Second * 10)
 	}
-
 }
 
 /**
@@ -307,7 +332,6 @@ func initCANLogger(numFuelCells uint16) *CANBus {
 }
 
 func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
-	var jErr JSONError
 	var oneRow struct {
 		logged float64
 		ID     uint16
@@ -330,8 +354,7 @@ func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
 	for rows.Next() {
 		err := rows.Scan(&oneRow.logged, &oneRow.ID, &oneRow.Data)
 		if err != nil {
-			jErr.AddError("candump", err)
-			jErr.ReturnError(w, 500)
+			ReturnJSONError(w, "canDump", err, 500, true)
 			return
 		}
 		if start == 0.0 {
@@ -348,7 +371,7 @@ func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
 ;   Generated by FireflyWeb:
 ;-------------------------------------------------------------------------------
 ;   Bus Name Connection              Protocol  Bit rate
-;   2   USB CAN                      N/A       N/A     
+;   2   USB CAN                      N/A       N/A
 ;-------------------------------------------------------------------------------
 ;   Message Number
 ;   |         Time Offset(ms)
@@ -364,8 +387,7 @@ func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
 ;---+-- ------+------ +- --+-- ----+--- +- -+-- -+ -- -- -- -- -- -- --
 `,
 				excelTime, file.Name(), t.Format("01/02/2006 03:04:05 PM")); err != nil {
-				jErr.AddError("candump", err)
-				jErr.ReturnError(w, 500)
+				ReturnJSONError(w, "canDump", err, 500, true)
 				return
 			}
 		}
@@ -373,8 +395,7 @@ func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
 		buf := new(bytes.Buffer)
 		err = binary.Write(buf, binary.BigEndian, oneRow.Data)
 		if err != nil {
-			jErr.AddError("candump", err)
-			jErr.ReturnError(w, 500)
+			ReturnJSONError(w, "canDump", err, 500, true)
 			return
 		}
 		if _, err = fmt.Fprintf(file, "%6d)%13.3f  2  Rx        %04X -  8    % X\n",
@@ -385,20 +406,17 @@ func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
 		rownum++
 	}
 	if err := file.Close(); err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	file, err := os.Open(filename)
 	if err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 	if _, err := io.Copy(w, file); err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 	if err := file.Close(); err != nil {
@@ -418,14 +436,13 @@ func candumpEvent(w http.ResponseWriter, r *http.Request) {
 	event := vars["event"]
 
 	if stmt, err = pDB.Prepare(CANDUMPEVENTSQL); err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "candump", err, http.StatusInternalServerError, true)
 		return
 	}
 
 	rows, err := stmt.Query(event)
 	if err != nil {
-		jErr.AddError("candump", err)
+		ReturnJSONError(w, "candump", err, http.StatusInternalServerError, true)
 		jErr.ReturnError(w, 500)
 		return
 	}
@@ -436,7 +453,10 @@ func candumpEvent(w http.ResponseWriter, r *http.Request) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Println("Error creating can dump file [", filename, "] - ", err)
-		jErr.AddError("candump", err)
+		err := jErr.AddError("candump", err)
+		if err != nil {
+			return
+		}
 		jErr.ReturnError(w, 500)
 		return
 	}
@@ -445,7 +465,6 @@ func candumpEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func candump(w http.ResponseWriter, r *http.Request) {
-	var jErr JSONError
 	var err error
 	var stmt *sql.Stmt
 	vars := mux.Vars(r)
@@ -453,8 +472,7 @@ func candump(w http.ResponseWriter, r *http.Request) {
 	to := vars["to"]
 
 	if stmt, err = pDB.Prepare(CANDUMPSQL); err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 	now := time.Now()
@@ -462,46 +480,40 @@ func candump(w http.ResponseWriter, r *http.Request) {
 	filename := fmt.Sprintf("./log-%d-%02d-%02d-%02d-%02d.trc", year, month, day, now.Hour(), now.Minute())
 	file, err := os.Create(filename)
 	if err != nil {
-		log.Println("Error creating can dump file [", filename, "] - ", err)
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 
 	rows, err := stmt.Query(from, to)
 	if err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 	ReturnCanDumpResult(w, rows, file)
 }
 
 func canRecord(w http.ResponseWriter, r *http.Request) {
-	var jErr JSONError
 	vars := mux.Vars(r)
 	to := vars["to"]
 
 	toTime, err := time.ParseInLocation("2006-1-2T15:4:5", to, time.Local)
 	if err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 400)
+		ReturnJSONError(w, "canDump", err, 400, true)
 		return
 	}
 	n := time.Now()
 	if !toTime.After(n) {
-		log.Println("Bad time specified")
 		errString := fmt.Sprintf("End of recording (%v) is in the past. (%v)", toTime, n)
-		jErr.AddErrorString("canRecord", errString)
-		jErr.ReturnError(w, 400)
+		ReturnJSONErrorString(w, "canRecord", errString, 400, true)
 		return
 	}
-	if toTime.Sub(time.Now()) > time.Hour*2 {
-		jErr.AddErrorString("canRecord", "You can only ask for up to 4 hours of on demand CAN logging.")
-		jErr.ReturnError(w, 400)
+	if toTime.Sub(time.Now()) > time.Hour*8 {
+		ReturnJSONErrorString(w, "canRecord", "You can only ask for up to 8 hours of on demand CAN logging.", 400, true)
 		return
 	}
+
 	canBus.setOnDemandRecording(toTime)
+	toTimeStr := toTime.Format(time.RFC850)
 	_, err = fmt.Fprintf(w, `<html>
 	<head>
 		<title>Can Recording Started</title>
@@ -510,28 +522,29 @@ func canRecord(w http.ResponseWriter, r *http.Request) {
 		<h1>Now recording CAN data until %s<h2><br />
 		<a href="/">Back to menu</a>
 	</body>
-</html>`, to)
+</html>`, toTimeStr)
 }
 
 /**
 listCANEvents returns a list of the last 50 CAN events
 */
 func listCANEvents(w http.ResponseWriter, _ *http.Request) {
-	var events struct {
-		Events []*string `json:"event"`
+	type Event struct {
+		Event    string `json:"event"`
+		OnDemand bool   `json:"onDemand"`
 	}
-	var jErr JSONError
+	var eventList struct {
+		Events []Event `json:"event"`
+	}
 	rows, err := pDB.Query(LISTCANEVENTSSQL)
 	if err != nil {
-		jErr.AddError("candump", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "canDump", err, 500, true)
 		return
 	}
 
 	if err != nil {
-		var jErr JSONError
-		jErr.AddError("database", err)
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "database", err, 500, true)
+		return
 	}
 
 	defer func() {
@@ -540,17 +553,16 @@ func listCANEvents(w http.ResponseWriter, _ *http.Request) {
 		}
 	}()
 	for rows.Next() {
-		row := new(string)
-		if err := rows.Scan(&row); err != nil {
+		row := new(Event)
+		if err := rows.Scan(&row.Event, &row.OnDemand); err != nil {
 			log.Print(err)
 		} else {
-			events.Events = append(events.Events, row)
+			eventList.Events = append(eventList.Events, *row)
 		}
 	}
-	if JSON, err := json.Marshal(events); err != nil {
-		if _, err := fmt.Fprintf(w, `{"error":"%s"`, err.Error()); err != nil {
-			log.Println("Error returning event list - ", err)
-		}
+	if JSON, err := json.Marshal(eventList); err != nil {
+		ReturnJSONError(w, "canBus", err, 500, true)
+		return
 	} else {
 		if _, err := fmt.Fprintf(w, string(JSON)); err != nil {
 			log.Println("Error returning event list - ", err)

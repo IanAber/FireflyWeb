@@ -79,8 +79,11 @@
                                 .then(function(data) {
                                     $('#events').empty();
                                     data.event.forEach(function (event) {
-                                        optText = event;
-                                        optValue = event.replace(" ", "T");
+                                        optText= event.event;
+                                        optValue = optText.replace(" ", "T");
+                                        if (event.onDemand) {
+                                            optText = optText + " (On Demand)";
+                                        }
                                         $('#events').append(`<option value="${optValue}">${optText}</option>`);
                                     });
                                 });

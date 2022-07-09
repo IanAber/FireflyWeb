@@ -4,6 +4,25 @@
     <meta charset="UTF-8">
     <title>Title</title>
 
+    <style>
+        .even {
+            background-color:#f7f3de;
+        }
+        .odd {
+            background-color: #f7f7f7;
+        }
+        input {
+            font-size: large;
+            width: 100%
+        }
+        select {
+            width: 100%;
+        }
+        th {
+            width: 20em;
+        }
+    </style>
+
     <script type="text/javascript">
         function getVal(id){
             return document.getElementById(id).value;
@@ -86,111 +105,150 @@
             </div>
             <div id="fields" style="display:none">
                 <table>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Target_Output_Voltage_V">Target Output Voltage</label>
                         </th>
                         <td>
                             <input type="number" min="15" max="56" step="0.1" width="100px" name="Target_Output_Voltage_V" id="Target_Output_Voltage_V" value="" />
                         </td>
+                        <td>
+                            This is the voltage that the DC-DC converter will try to maintain when the FCM-804 is running
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Delayed_Start_Under_Voltage_V">Delayed Start Under Voltage</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="60" step="0.1" width="100px" name="Delayed_Start_Under_Voltage_V"  id="Delayed_Start_Under_Voltage_V" value="" />
                         </td>
+                        <td>
+                            The Voltage below which the fuel cell will automatically begin outputting. See also Delayed Start Qualification Time
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Delayed_Start_Qualification_Time_s">Delayed Start Qualification Time</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="1440" step="1" width="100px" name="Delayed_Start_Qualification_Time_s" id="Delayed_Start_Qualification_Time_s" value="" />
                         </td>
+                        <td>
+                            The length of time that the output voltage should be below the Delayed Start Under Voltage before the FCM-804 enters Run mode and begins to output power.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Immediate_Start_Under_Voltage_V">Immediate Start Under Voltage</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="60" step="0.1" width="100px" name="Immediate_Start_Under_Voltage_V" id="Immediate_Start_Under_Voltage_V" value="" />
                         </td>
+                        <td>
+                            The voltage at which the FCM-804 immediately starts to output without waiting for a quilification time delay.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Delayed_Stop_Over_Voltage_V">Delayed Stop Over Voltage</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="60" step="0.1" width="100px" name="Delayed_Stop_Over_Voltage_V" id="Delayed_Stop_Over_Voltage_V" value="" />
                         </td>
+                        <td>
+                            When the output voltage rises above this setpoint the FCM-804 will stop outputting. See also Delayed Stop OV Qualification Time
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Delayed_Stop_OV_Qualification_Time_s">Delayed Stop OV Qualification Time</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="3600" step="1" width="100px" name="Delayed_Stop_OV_Qualification_Time_s" id="Delayed_Stop_OV_Qualification_Time_s" value="" />
                         </td>
+                        <td>
+                            The length of time that the output voltage must be above the Delayed Stop Over Voltage setting before the FCM-804 enters Standby mode.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Delayed_Stop_Under_Current_A">Delayed Stop Under Current</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="120" step="0.1" width="100px" name="Delayed_Stop_Under_Current_A" id="Delayed_Stop_Under_Current_A" value="" />
                         </td>
+                        <td>
+                            The minimum output current below which the FCM-804 will enter Standby mode and stop outputting. See also Delayed Stop UC Qualification Time.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Delayed_Stop_UC_Qualification_Time_s">Delayed Stop UC Qualification Time</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="3600" step="1" width="100px" name="Delayed_Stop_UC_Qualification_Time_s" id="Delayed_Stop_UC_Qualification_Time_s" value="" />
                         </td>
+                        <td>
+                            The length of time that the output current must be below the Delayed Stop Under Current before the FCM-804 enters Standby mode.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Deny_Start_Under_Voltage_V">Deny Start Under Voltage</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="50" step="0.1" width="100px" name="Deny_Start_Under_Voltage_V" id="Deny_Start_Under_Voltage_V" value="" />
                         </td>
+                        <td>
+                            If the output voltage is below this setpoint the FCM-804 will not attempt to start outputting.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="System_Index">System Index</label>
                         </th>
                         <td>
                             <input type="number" min="1" max="8" step="1" name="System_Index" id="System_Index" value="" />
                         </td>
+                        <td>
+                            When more than one FCM-804 is connected to the same CAN bus, each must have its own address so that the message source can be identified. This number is encoded as part of the frame address to identify the FCM-804.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Output_Voltage_Rise_Rate_Vps">Output Voltage Rise Rate</label>
                         </th>
                         <td>
                             <input type="number" min="0.017" max="2000" step="0.001" width="100px" name="Output_Voltage_Rise_Rate_Vps" id="Output_Voltage_Rise_Rate_Vps" value="" />
                         </td>
+                        <td>
+                            The rate at which the output voltage target set in the DC-DC converter will rise from the actual output when the turned on and the target voltage programmed above.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Minimum_Output_Voltage_V">Minimum Output Voltage</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="60" step="0.1" width="100px" name="Minimum_Output_Voltage_V" id="Minimum_Output_Voltage_V" value="" />
                         </td>
+                        <td>
+                            The minimum output voltage of the FCM-804 during production
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Output_Current_Limit_A">Output Current Limit</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="40" step="0.1" width="100px" name="Output_Current_Limit_A" id="Output_Current_Limit_A" value="" />
                         </td>
+                        <td>
+                            The maximum allowed current for each stack in the FCM-804. (there are three stacks)
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Hard_Set_Output_Voltage">Hard Set Output Voltage</label>
                         </th>
@@ -200,61 +258,82 @@
                                 <option value=false>false</option>
                             </select>
                         </td>
+                        <Td>
+                            We can guess, but that is always what it will be
+                        </Td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="Output_Power_Limit_W">Output Power Limit</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="1250" step="1" width="100px" name="Output_Power_Limit_W" id="Output_Power_Limit_W" value="" />
                         </td>
+                        <td>
+                            Maximum power for each stack in the FCM-804. (there are three stacks)
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Restart_Delay_s">Restart Delay</label>
                         </th>
                         <td>
                             <input type="number" min="0" max="3600" step="1" width="100px" name="Restart_Delay_s" id="Restart_Delay_s" value="" />
                         </td>
+                        <td>
+                            Not really sure on this
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="CAN_Baud_Rate_enum">CAN Baud Rate</label>
                         </th>
                         <td>
                             <input name="CAN_Baud_Rate_enum" id="CAN_Baud_Rate_enum" value="" disabled />
                         </td>
+                        <td>
+                            The CAN communication baud rate. This should not be changed.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="CAN_Mode_enum">CAN Mode</label>
                         </th>
                         <td>
                             <input name="CAN_Mode_enum" id="CAN_Mode_enum" value="" disabled/>
                         </td>
+                        <td>
+                            CAN communication mode, This should not be changed
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="odd">
                         <th>
                             <label for="CAN_J1939_Send_Address">CAN J1939 Send Address</label>
                         </th>
                         <td>
                             <input name="CAN_J1939_Send_Address" id="CAN_J1939_Send_Address" value="" disabled/>
                         </td>
+                        <td>
+                            When using the J31939 standard message format this is the address from which messages will be sent.
+                        </td>
                     </tr>
-                    <tr>
+                    <tr class="even">
                         <th>
                             <label for="Serial_Baud_Rate_enum">Serial Baud Rate</label>
                         </th>
                         <td>
                             <input name="Serial_Baud_Rate_enum" id="Serial_Baud_Rate_enum" value="" disabled/>
                         </td>
-                    </tr>
-                    <tr>
-                        <th>
-                            <input type="button" value="Generate File" onclick="GenerateFile()" />
-                        </th>
                         <td>
-                            <label for="fileName">File Name :</label><input type="text" id="fileName" name="fileName" value="" />
+                            Serial baud rate should not be changed. Not even sure what this is all about.
+                        </td>
+                    </tr>
+                    <tr class="odd">
+                        <td colspan="2">
+                            <label for="fileName">File Name :</label><input type="text" id="fileName" name="fileName" value="" style="width:15em" />
+                        </td>
+                        <td>
+                            <input type="button" value="Generate File" onclick="GenerateFile()" style="width:8em" /> File will be exported to your default download folder.
                         </td>
                     </tr>
                 </table>

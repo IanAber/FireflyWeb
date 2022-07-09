@@ -677,7 +677,7 @@ func (e *Electrolyser) SendRateToElectrolyser(rate float32) error {
 
 // SetProduction sets the elecctrolyser to the rate given 0, 60..100
 func (e *Electrolyser) SetProduction(rate uint8) {
-	if debug {
+	if params.DebugOutput {
 		log.Println("Set electrolyser", e.ip, "to", rate)
 	}
 	if !e.CheckConnected() {
@@ -702,7 +702,7 @@ func (e *Electrolyser) SetProduction(rate uint8) {
 		}
 		// If the electrolyser is in Idle then start it.
 		if e.status.ElState == ElIdle {
-			if debug {
+			if params.DebugOutput {
 				log.Println("Electrolyser is idle so sending a start command.")
 			}
 			e.Start(false)
@@ -781,14 +781,14 @@ func (e *Electrolyser) Start(overrideHoldOff bool) bool {
 			return false
 		} else {
 			// If successful mark the time so we don't try and stop and start too quickly
-			if debug {
+			if params.DebugOutput {
 				log.Println("Electrolyser", e.ip, "started")
 			}
 			e.OnOffTime = time.Now()
 			return true
 		}
 	} else {
-		if debug {
+		if params.DebugOutput {
 			log.Println("Electrolyser", e.ip, "not started. In holdoff until ", e.OnOffTime.Add(params.ElectrolyserHoldOffTime))
 		}
 	}
@@ -837,7 +837,7 @@ func (e *Electrolyser) Stop(overrideHoldOff bool) bool {
 			} else {
 				// If successful mark the time so we don't immediately try and start it again
 				e.OnOffTime = time.Now()
-				if debug {
+				if params.DebugOutput {
 					log.Println("Electrolyser", e.ip, "stopped.")
 				}
 				return true
@@ -848,7 +848,7 @@ func (e *Electrolyser) Stop(overrideHoldOff bool) bool {
 		// If not immediate start a timer if it is not already running and the electrolyser is outputting
 		if e.OffRequested == nil && e.status.ElState == ElSteady {
 			go e.setDelayedStop()
-			if debug {
+			if params.DebugOutput {
 				log.Println("Electrolyser", e.ip, "timer started to stop production")
 			}
 		}
@@ -869,7 +869,7 @@ func (e *Electrolyser) Preheat() {
 			}
 			e.clientConnected = false
 		} else {
-			if debug {
+			if params.DebugOutput {
 				log.Println("Preheat request ignored as temperature is already ", e.status.ElectrolyteTemp, "C")
 			}
 		}

@@ -1,0 +1,630 @@
+<html lang="en">
+    <head>
+        <title>Firefly Status</title>
+        <script type="text/javascript" src="/scripts/jquery-3.6.0.min.js"></script>
+        <script type="text/javascript" src="scripts/jquery-ui.js"></script>
+        <link rel="stylesheet" type="text/css" href="css/jquery-ui.min.css">
+
+        <style>
+            td.label {
+                text-align:right;
+                border-right-style:solid;
+                border-right-width:2px;
+                padding-right:5px;
+            }
+            td {
+                padding-left:5px;
+            }
+            div {
+                padding:5px;
+            }
+            h2 {
+                text-align:center;
+            }
+            table {
+                margin:auto;
+            }
+            th.RelayOn {
+                background-color:green;
+                color:white;
+                padding:10px
+            }
+            th.RelayOff {
+                background-color:red;
+                color:white;
+                padding:10px
+            }
+        </style>
+        <script type="text/javascript">
+            function receiveStatus() {
+                let url = "ws://" + window.location.host + "/wsFull";
+                let conn = new WebSocket(url);
+
+                // let  Data = document.getElementById("Data");
+
+                conn.onclose = function() {
+                    $("#connStatus").innerText = 'Connection closed';
+                }
+                conn.onmessage = function(evt) {
+                    $("#connStatus").innerText = '';
+                    try {
+                        jsonData = JSON.parse(evt.data);
+
+                        let rl = jsonData.relays
+                        if (rl !== undefined) {
+                            if (rl.el0) {
+                                let rlel0 = $("#rlel0");
+                                rlel0.removeClass("RelayOff");
+                                rlel0.addClass("RelayOn");
+                            } else {
+                                rlel0.removeClass("RelayOn");
+                                rlel0.addClass("RelayOff");
+                            }
+                            let rlel1 = $("#rlel1");
+                            if (rl.el1) {
+                                rlel0.removeClass("RelayOff");
+                                rlel0.addClass("RelayOn");
+                            } else {
+                                rlel0.removeClass("RelayOn");
+                                rlel0.addClass("RelayOff");
+                            }
+                            let rlgas = $("#rlgas")
+                            if (rl.gas) {
+                                rlgas.removeClass("RelayOff");
+                                rlgas.addClass("RelayOn");
+                            } else {
+                                rlgas.removeClass("RelayOn");
+                                rlgas.addClass("RelayOff");
+                            }
+                            let rlfcen0 = $("#rlfc0en")
+                            if (rl.fc0en) {
+                                rlfcen0.removeClass("RelayOff");
+                                rlfcen0.addClass("RelayOn");
+                            } else {
+                                rlfcen0.removeClass("RelayOn");
+                                rlfcen0.addClass("RelayOff");
+                            }
+                            let rlfcrun0 = $("#rlfc0run")
+                            if (rl.fc0run) {
+                                rlfcrun0.removeClass("RelayOff");
+                                rlfcrun0.addClass("RelayOn");
+                            } else {
+                                rlfcrun0.removeClass("RelayOn");
+                                rlfcrun0.addClass("RelayOff");
+                            }
+                            let rlfcen1 = $("#rlfc1en")
+                            if (rl.fc1en) {
+                                rlfcen1.removeClass("RelayOff");
+                                rlfcen1.addClass("RelayOn");
+                            } else {
+                                rlfcen1.removeClass("RelayOn");
+                                rlfcen1.addClass("RelayOff");
+                            }
+                            let rlfcrun1 = $("#rlfc1run")
+                            if (rl.fc1run) {
+                                rlfcrun1.removeClass("RelayOff");
+                                rlfcrun1.addClass("RelayOn");
+                            } else {
+                                rlfcrun1.removeClass("RelayOn");
+                                rlfcrun1.addClass("RelayOff");
+                            }
+                            let rldrain = $("#rldrain")
+                            if (rl.drain) {
+                                rldrain.removeClass("RelayOff");
+                                rldrain.addClass("RelayOn");
+                            } else {
+                                rldrain.removeClass("RelayOn");
+                                rldrain.addClass("RelayOff");
+                            }
+                        }
+
+                        let el = jsonData.el[0];
+
+                        if (el !== undefined) {
+                            $("#el0").css({display: "unset"});
+                            if (el.on) {
+                                $("#el0On").css({display: "unset"});
+                                $("#el0Off").css({display: "none"});
+                                $("#dryerOn").css({display: "unset"});
+                                $("#dryerOff").css({display: "none"});
+                                $("#el0SysState").text(el.systemstate);
+                                $("#el0ElState").text(el.state);
+                                $("#el0Level").text(el.level);
+                                $("#el0Temp").text(el.temp + "℃");
+                                $("#el0InnerPressure").text(el.innerpressure + " Bar");
+                                $("#el0OuterPressure").text(el.outerpressure + " Bar");
+                                $("#el0H2Flow").text(el.h2flow + " NL/hr");
+                                $("#el0WaterPressure").text(el.waterpressure + " Bar");
+                                $("#el0RestartPressure").text(el.restart + " Bar");
+                                $("#el0MaxTankPressure").text(el.maxtank + " Bar")
+                                $("#el0CurrentProduction").text(el.rate + "%");
+                                $("#el0DefaultProduction").text(el.defrate + "%");
+                                $("#el0StackVoltage").text(el.voltage + "V");
+                                $("#el0SerialNumber").text(el.serial);
+                            } else {
+                                $("#el0On").css({display: "none"});
+                                $("#el0Off").css({display: "unset"});
+                                $("#dryerOn").css({display: "none"});
+                                $("#dryerOff").css({display: "unset"});
+                                $("#el0SysState").text(el.systemstate);
+                                $("")
+                            }
+                            $("#dryerInputPressure").text(jsonData.dr.inputPressure + " Bar");
+                            $("#dryerOutputPressure").text(jsonData.dr.outputPressure + " Bar");
+                            $("#dryerTemp0").text(jsonData.dr.temp0 + "℃");
+                            $("#dryerTemp1").text(jsonData.dr.temp1 + "℃");
+                            $("#dryerTemp2").text(jsonData.dr.temp2 + "℃");
+                            $("#dryerTemp3").text(jsonData.dr.temp3 + "℃");
+                            $("#dryerError").text(jsonData.dr.errors);
+                            $("#dryerWarning").text(jsonData.dr.warnings);
+                        } else {
+                            $("#el0").css({display: "none"});
+                            $("#dryer").css({display:none})
+                        }
+                        el = jsonData.el[1];
+                        if (el !== undefined) {
+                            $("#el1").css({display: "unset"});
+                            if (el.on) {
+                                $("#el1On").css({display: "unset"});
+                                $("#el1Off").css({display: "none"});
+                                $("#el1SysState").text(el.systemstate);
+                                $("#el1ElState").text(el.state);
+                                $("#el1Level").text(el.level);
+                                $("#el1Temp").text(el.temp + "℃");
+                                $("#el1InnerPressure").text(el.innerpressure + " Bar");
+                                $("#el1OuterPressure").text(el.outerpressure + " Bar");
+                                $("#el1H2Flow").text(el.h2flow + " NL/hr");
+                                $("#el1WaterPressure").text(el.waterpressure + " Bar");
+                                $("#el1RestartPressure").text(el.restart + " Bar");
+                                $("#el1MaxTankPressure").text(el.maxtank + " Bar")
+                                $("#el1CurrentProduction").text(el.rate + "%");
+                                $("#el1DefaultProduction").text(el.defrate + "%");
+                                $("#el1StackVoltage").text(el.voltage + "V");
+                                $("#el1SerialNumber").text(el.serial);
+                            } else {
+                                $("#el1On").css({display: "none"});
+                                $("#el1Off").css({display: "unset"});
+                                $("#el1SysState").text(el.systemstate);
+                            }
+                        } else {
+                            $("#el1").css({display: "none"});
+                        }
+                        $("#gasFuelCellPressure").text(jsonData.gas.fcpressure + " mBar");
+                        $("#gasTankPressure").text(jsonData.gas.tankpressure + " Bar");
+                        $('#TDS').text(jsonData.tds + " ppm");
+
+                        if (jsonData.fc === null) {
+                            $("#FuelCell0").css({display: "none"})
+                            $("#FuelCell1").css({display: "none"})
+                        } else {
+                            let fc = jsonData.fc[0];
+                            if (fc !== undefined) {
+                                $("#FuelCell0").css({display: "unset"})
+                                $("#fc0AnodePressure").text(fc.anodePressure + " mBar");
+                                $("#fc0InletTemperature").text(fc.inletTemp + "℃");
+                                $("#fc0OutletTemperature").text(fc.outletTemp + "℃");
+                                $("#fc0SerialNumber").text(fc.serial);
+                                $("#fc0OutputCurrent").text(fc.amps + "A");
+                                $("#fc0OutputVolts").text(fc.volts + "V");
+                                $("#fc0OutputPower").text(fc.power + "W");
+                                $("#fc0Version").text(fc.version);
+                                $("#fc0State").text(fc.state);
+                                $("#fc0FaultA").text(fc.faultA);
+                                $("#fc0FaultB").text(fc.faultB);
+                                $("#fc0FaultC").text(fc.faultC);
+                                $("#fc0FaultD").text(fc.faultD);
+                                if (fc.on) {
+                                    $("#FuelCell0Off").css({display: "none"})
+                                    $("#FuelCell0On").css({display: "unset"})
+                                } else {
+                                    $("#FuelCell0On").css({display: "none"})
+                                    $("#FuelCell0Off").css({display: "unset"})
+                                }
+                            } else {
+                                $("#FuelCell0").css({display: "none"});
+                            }
+                            fc = jsonData.fc[1];
+                            if (fc !== undefined) {
+                                $("#FuelCell1").css({display: "unset"})
+                                $("#fc1AnodePressure").text(fc.anodePressure + " mBar");
+                                $("#fc1InletTemperature").text(fc.inletTemp + "℃");
+                                $("#fc1OutletTemperature").text(fc.outletTemp + "℃");
+                                $("#fc1SerialNumber").text(fc.serial);
+                                $("#fc1OutputCurrent").text(fc.amps + "A");
+                                $("#fc1OutputVolts").text(fc.volts + "V");
+                                $("#fc1OutputPower").text(fc.power + "W");
+                                $("#fc1Version").text(fc.version);
+                                $("#fc1State").text(fc.state);
+                                $("#fc1FaultA").text(fc.faultA);
+                                $("#fc1FaultB").text(fc.faultB);
+                                $("#fc1FaultC").text(fc.faultC);
+                                $("#fc1FaultD").text(fc.faultD);
+                                if (fc.on) {
+                                    $("#FuelCell1Off").css({display: "none"})
+                                    $("#FuelCell1On").css({display: "unset"})
+                                } else {
+                                    $("#FuelCell1On").css({display: "none"})
+                                    $("#FuelCell1Off").css({display: "unset"})
+                                }
+                            } else {
+                                $("#FuelCell1").css({display: "none"});
+                            }
+                        }
+                    }
+                    catch (e) {
+                        alert(e);
+                    }
+
+                }
+            }
+
+            function elClick(element, device) {
+                let payload = {command:""}
+                if (element.classList.contains("RelayOff")) {
+                    payload.command = "on";
+                } else {
+                    payload.command = "off"
+                }
+                let xmlhttp = new XMLHttpRequest();
+                xmlhttp.open("PUT", "/el/" + device, true);
+                xmlhttp.responseType = "json";
+                xmlhttp.onreadystatechange = function () { //Call a function when the state changes.
+                    if (xmlhttp.readyState === 4 && xmlhttp.status !== 200) {
+                        if (xmlhttp.response.Errors !== null) {
+                            xmlhttp.response.Errors.forEach(function(value, index, array){ alert(value.Device + "\n" + value.Err);});
+                        } else {
+                            alert(xmlhttp.responseText);
+                        }
+                    }
+                };
+                xmlhttp.send(JSON.stringify(payload));
+            }
+            function fcenClick(element, device) {
+                if (element.classList.contains("RelayOff")) {
+                    action = "on"
+                } else {
+                    action = "off"
+                }
+                fetch("/fc/" + device + "/" + action)
+                    .then( function(response) {
+                        if (response.status !== 200) {
+                            alert ("Failed to turn the fuel cell enable solenoid " + action);
+                        }
+                    })
+            }
+            function fcrunClick(element, device) {
+                if (element.classList.contains("RelayOff")) {
+                    action = "run"
+                } else {
+                    action = "stop"
+                }
+                fetch("/fc/" + device + "/" + action)
+                    .then( function(response) {
+                        if (response.status !== 200) {
+                            alert ("Failed to turn the fuel cell run solenoid " + action);
+                        }
+                    })
+            }
+
+            function gasClick(element, device) {
+                let payload = {state:true}
+                payload.state = element.classList.contains("RelayOff")
+                let xmlhttp = new XMLHttpRequest();
+                xmlhttp.open("PUT", "/gas", true);
+                xmlhttp.onreadystatechange = function () { //Call a function when the state changes.
+                    if (xmlhttp.readyState === 4 && xmlhttp.status === 200) {
+                        alert(xmlhttp.responseText);
+                    }
+                };
+                xmlhttp.onreadystatechange = null;
+                xmlhttp.send(JSON.stringify(payload));
+            }
+
+            function drainClick(element, device) {
+                let payload = {state:true}
+                payload.state = element.classList.contains("RelayOff")
+                let xmlhttp = new XMLHttpRequest();
+                xmlhttp.open("PUT", "/drain", true);
+                xmlhttp.onreadystatechange = function () { //Call a function when the state changes.
+                    if (xmlhttp.readyState === 4 && xmlhttp.status === 200) {
+                        alert(xmlhttp.responseText);
+                    }
+                };
+                xmlhttp.onreadystatechange = null;
+                xmlhttp.send(JSON.stringify(payload));
+            }
+
+            $(document).ready(receiveStatus);
+    </script>
+    </head>
+    <body>
+        <div>
+            <table>
+                <tr>
+                    <th colspan=8>Relay Status</th>
+                </tr>
+                <tr>
+                    <th id="rlel0" class="RelayOff" onclick="elClick(this, 0)">Electrolyser 0</th>
+                    <th id="rlel1" class="RelayOff" onclick="elClick(this, 1)">Electrolyser 1</th>
+                    <th id="rlgas" class="RelayOff" onclick="gasClick(this)">Gas to Fuel Cell</th>
+                    <th id="rlfc0en" class="RelayOff" onclick="fcenClick(this, 0)">Fuel Cell 0 Enable</th>
+                    <th id="rlfc0run" class="RelayOff" onclick="fcrunClick(this, 0)">Fuel Cell 0 Run 1</th>
+                    <th id="rlfc1en" class="RelayOff" onclick="fcenClick(this, 1)">Fuel Cell 1 Enable</th>
+                    <th id="rlfc1run" class="RelayOff" onclick="fcrunClick(this, 1)">Fuel Cell 1 Run</th>
+                    <th id="rldrain" class="RelayOff" onclick="drainClick(this)">Drain</th>
+                </tr>
+                <tr>
+                    <td colspan="8"><span id="connStatus"></span></td>
+                </tr>
+            </table>
+        </div>
+        <div id="el0Off">
+            <h2>Electrolyser 0</h2>
+            <h3 style="text-align:center">Electrolyser is switched OFF</h3>
+        </div>
+        <div id="el0">
+            <div id="el0On" style="display:none">
+                <table>
+                    <tr>
+                        <td class="label">System State</td>
+                        <td><span id="el0SysState"></span></td>
+                        <td class="label">Electrolyser State</td>
+                        <td><span id="el0ElState"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Electrolyte Level</td>
+                        <td><span id="el0Level"></span></td>
+                        <td class="label">Electrolyte Temp</td>
+                        <td><span id="el0Temp"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Inner H2 Pressure</td>
+                        <td><span id="el0InnerPressure"></span></td>
+                        <td class="label">Outer H2 Pressure</td>
+                        <td><span id="el0OuterPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">H2 Flow</td>
+                        <td><span id="el0H2Flow"></span></td>
+                        <td class="label">Water Pressure</td>
+                        <td><span id="el0WaterPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Max Tank Pressure</td>
+                        <td><span id="el0MaxTankPressure"></span></td>
+                        <td class="label">Restart Pressure</td>
+                        <td><span id="el0RestartPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Current Production Rate</td>
+                        <td><span id="el0CurrentProduction"></span></td>
+                        <td class="label">Default Production Rate</td>
+                        <td><span id="el0DefaultProduction"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Stack Voltage</td>
+                        <td><span id="el0StackVoltage"></span></td>
+                        <td class="label">Serial Number</td>
+                        <td><span id="el0SerialNumber"></span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <div id="el1">
+            <div id="el1Off">
+                <h2>Electrolyser 1</h2>
+                <h3 style="text-align:center">Electrolyser is switched OFF</h3>
+            </div>
+            <div id="el1On" style="display:none">
+                <table>
+                    <tr>
+                        <td class="label">System State</td>
+                        <td><span id="el1SysState"></span></td>
+                        <td class="label">Electrolyser State</td>
+                        <td><span id="el1ElState"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Electrolyte Level</td>
+                        <td><span id="el1Level"></span></td>
+                        <td class="label">Electrolyte Temp</td>
+                        <td><span id="el1Temp"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Inner H2 Pressure</td>
+                        <td><span id="el1InnerPressure"></span></td>
+                        <td class="label">Outer H2 Pressure</td>
+                        <td><span id="el1OuterPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">H2 Flow</td>
+                        <td><span id="el1H2Flow"></span></td>
+                        <td class="label">Water Pressure</td>
+                        <td><span id="el1WaterPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Max Tank Pressure</td>
+                        <td><span id="el1MaxTankPressure"></span></td>
+                        <td class="label">Restart Pressure</td>
+                        <td><span id="el1RestartPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Current Production Rate</td>
+                        <td><span id="el1CurrentProduction"></span></td>
+                        <td class="label">Default Production Rate</td>
+                        <td><span id="el1DefaultProduction"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Stack Voltage</td>
+                        <td><span id="el1StackVoltage"></span></td>
+                        <td class="label">Serial Number</td>
+                        <td><span id="el1SerialNumber"></span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <div id="dryer">
+            <div id="dryerOff" style="float:left; width:48%">
+                <h2>Dryer OFF</h2>
+            </div>
+            <div id="dryerOn" style="float:left; display:none">
+                <table>
+                    <tr>
+                        <td class="label">Temperature 0</td>
+                        <td><span id="dryerTemp0"></span></td>
+                        <td class="label">Temperature 1</td>
+                        <td><span id="dryerTemp1"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Temperature 2</td>
+                        <td><span id="dryerTemp2"></span></td>
+                        <td class="label">Temperature 3</td>
+                        <td><span id="dryerTemp3"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Input Pressure</td>
+                        <td><span id="dryerInputPressure"></span></td>
+                        <td class="label">Ouput Pressure</td>
+                        <td><span id="dryerOutputPressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Dryer Error</td>
+                        <td><span id="dryerError"></span></td>
+                        <td class="label">Dryer Warning</td>
+                        <td><span id="dryerWarning"></span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <div id="FuelcellMaintenance" style="float:left; width:48%; display:none">
+            <h2>Fuel Cell Maintenance Mode Enabled</h2>
+        </div>
+        <div id="FuelCell0" style="float:left; width:48%">
+            <h2>Fuel Cell 0</h2>
+            <div id="FuelCell0Off">
+                <h3 style="text-align:center">Fuel Cell is switched OFF</h3>
+            </div>
+            <div id="FuelCell0On" style="display:none">
+                <table>
+                    <tr>
+                        <td class="label">Serial Number</td>
+                        <td><span id="fc0SerialNumber"></span></td>
+                        <td class="label">Version</td>
+                        <td><span id="fc0Version"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Output Power</td>
+                        <td><span id="fc0OutputPower"></span></td>
+                        <td class="label">Output Volts</td>
+                        <td><span id="fc0OutputVolts"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Output Current</td>
+                        <td><span id="fc0OutputCurrent"></span></td>
+                        <td class="label">Anode Pressure</td>
+                        <td><span id="fc0AnodePressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Inlet Temperature</td>
+                        <td><span id="fc0InletTemperature"></span></td>
+                        <td class="label">Outlet Temperature</td>
+                        <td><span id="fc0OutletTemperature"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label" colspan=2>State</td>
+                        <td colspan=2><span id="fc0State"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Fault Flag A</td>
+                        <td><span id="fc0FaultA"></span></td>
+                        <td class="label">Fault Flag B</td>
+                        <td><span id="fc0FaultB"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Fault Flag C</td>
+                        <td><span id="fc0FaultC"></span></td>
+                        <td class="label">Fault Flag D</td>
+                        <td><span id="fc0FaultD"></span></td>
+                    </tr>
+                </table>
+            </div>
+            <br />
+            <a href="/fc/0/restart">Restart</a>
+        </div>
+        <div id="FuelCell1" style="float:left; width:48%; display:none">
+            <h2>Fuel Cell 1</h2>
+            <div id="FuelCell1Off">
+                <h3 style="text-align:center">Fuel Cell is switched OFF</h3>
+            </div>
+            <div id="FuelCell1On" style="display:none">
+                <table>
+                    <tr>
+                        <td class="label">Serial Number</td>
+                        <td><span id="fc1SerialNumber"></span></td>
+                        <td class="label">Version</td>
+                        <td><span id="fc1Version"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Output Power</td>
+                        <td><span id="fc1OutputPower"></span></td>
+                        <td class="label">Output Volts</td>
+                        <td><span id="fc1OutputVolts"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Output Current</td>
+                        <td><span id="fc1OutputCurrent"></span></td>
+                        <td class="label">Anode Pressure</td>
+                        <td><span id="fc1AnodePressure"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Inlet Temperature</td>
+                        <td><span id="fc1InletTemperature"></span></td>
+                        <td class="label">Outlet Temperature</td>
+                        <td><span id="fc1OutletTemperature"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label" colspan=2>State</td>
+                        <td colspan=2><span id="fc1State"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Fault Flag A</td>
+                        <td><span id="fc1FaultA"></span></td>
+                        <td class="label">Fault Flag B</td>
+                        <td><span id="fc1FaultB"></span></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Fault Flag C</td>
+                        <td><span id="fc1FaultC"></span></td>
+                        <td class="label">Fault Flag D</td>
+                        <td><span id="fc1FaultD"></span></td>
+                    </tr>
+                </table>
+            </div>
+            <br />
+            <a href="/fc/1/restart">Restart</a>
+        </div>
+        <div style="float:left; clear:both; width:48%">
+            <h2>Gas</h2>
+            <table>
+                <tr>
+                    <td class="label">Fuel Cell Pressure</td>
+                    <td><span id="gasFuelCellPressure"></span></td>
+                    <td class="label">Tank Pressure</td>
+                    <td><span id="gasTankPressure"></span></td>
+                </tr>
+            </table>
+        </div>
+        <div style="float:left; width:48%">
+            <h2>TDS</h2>
+            <table>
+                <tr>
+                    <td class="label">Total Dissolved Solids</td>
+                    <td><span id="TDS"></span></td>
+                </tr>
+            </table>
+        </div>
+        <div style="clear:both">
+            <a href="/">Back to the Menu</a>
+        </div>
+    </body>
+</html>
+

@@ -102,7 +102,7 @@
 					},
 					series: [{
 						dataField: 'FC1Power',
-						displayText: 'Fuel Cell 1 Watts',
+						displayText: 'Fuel Cell Watts',
 						lineColor: '#D02020',
 						fillColor: '#D02020',
 					}]
@@ -128,7 +128,7 @@
 					},
 					series: [{
 						dataField: 'FC1Volts',
-						displayText: 'Fuel Cell 1 Volts',
+						displayText: 'Fuel Cell Volts',
 						lineColor: '#2020D0',
 						fillColor: '#2020D0',
 					}]
@@ -154,10 +154,36 @@
 					},
 					series: [{
 							dataField: 'FC1Current',
-							displayText: 'Fuel Cell 1 Amps',
+							displayText: 'Fuel Cell Amps',
 							lineColor: '#20D020',
 							fillColor: '#20D020',
 						}]
+				}, {
+					type: 'spline',
+					valueAxis: {
+						interval: 1,
+						gridLines: {
+							visible: true,
+							step: 1,
+						},
+						labels: {
+							formatSettings: {
+								decimalPlaces: 0,
+							},
+							visible: true,
+							step: 1,
+						},
+						minValue: 300,
+						maxValue: 1100,
+						description: 'mBar',
+						gridLinesColor: '#20D0D0'
+					},
+					series: [{
+						dataField: 'FC1AnodePressure',
+						displayText: 'Fuel Cell mBar',
+						lineColor: '#20D0D0',
+						fillColor: '#20D0D0',
+					}]
 				}]
 			};
 
@@ -166,6 +192,7 @@
 				currentSettings.seriesGroups[0].series[0].dataField = 'FC2Power';
 				currentSettings.seriesGroups[1].series[0].dataField = 'FC2Volts';
 				currentSettings.seriesGroups[2].series[0].dataField = 'FC2Current';
+				currentSettings.seriesGroups[3].series[0].dataField = 'FC2AnodePressure';
 			}
 
 			$('#currentChartContainer').jqxChart(currentSettings);
@@ -186,21 +213,23 @@
 					if (response.status === 200) {
 						response.json()
 							.then(function(data) {
-								end = Math.trunc($("#endAt").jqxDateTimeInput('value') / 1000) + 60;
+								end = Math.trunc($("#endAt").jqxDateTimeInput('value') / 1000);
 								start = ($("#startAt").jqxDateTimeInput('value') / 1000)
 								if (typeof data.error != "undefined") {
 									alert(data.error);
 								} else {
-									data.push({
-										"Logged":(Math.trunc(end)).toString(),
-										"FC1Volts":data[data.length - 1].FC1Volts,
-										"FC1Current":data[data.length - 1].FC1Current,
-										"FC1Power":data[data.length - 1].FC1Power,
-										"FC2Volts":data[data.length - 1].FC2Volts,
-										"FC2Current":data[data.length - 1].FC2Current,
-										"FC2Power":data[data.length - 1].FC2Power,
-										"H2Pressure":data[data.length - 1].H2Pressure
-									});
+									// data.push({
+									// 	"Logged":(Math.trunc(end)).toString(),
+									// 	"FC1Volts":data[data.length - 1].FC1Volts,
+									// 	"FC1Current":data[data.length - 1].FC1Current,
+									// 	"FC1Power":data[data.length - 1].FC1Power,
+									// 	"FC2Volts":data[data.length - 1].FC2Volts,
+									// 	"FC2Current":data[data.length - 1].FC2Current,
+									// 	"FC2Power":data[data.length - 1].FC2Power,
+									// 	"H2Pressure":data[data.length - 1].H2Pressure,
+									// 	"AnodePressure":data[data.length - 1].AnodePressure
+									// });
+									interval = (end - start) / 50;
 
 									chart = $('#currentChartContainer');
 									chart.jqxChart({'source':data});
@@ -208,7 +237,7 @@
 										dataField: 'Logged',
 										showGridLines: false,
 										textRotationAngle: 270,
-										unitInterval: 1800,
+										unitInterval: interval,
 										formatFunction: xAxisFormatFunction,
 										'minValue':start,
 										'maxValue':end}});

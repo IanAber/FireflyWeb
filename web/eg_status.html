@@ -54,67 +54,6 @@
         let timeResolution = true;  // Set to false if using only dates
         let avgDailyEnergy = 4000;   // This gets filled in later
 
-        function enableElectrolyser(nDevice) {
-            let xhr = new XMLHttpRequest();
-            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/on");
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.send();
-        }
-
-        function disableElectrolyser(nDevice) {
-            let xhr = new XMLHttpRequest();
-            xhr.open('POST', window.location.origin + "el/" + nDevice + "/off");
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Disable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.send();
-        }
-
-        function setElectrolyserRate(nDevice , rate ) {
-            let xhr = new XMLHttpRequest();
-            if (rate < 60) {
-                rate = 0;
-                if (!confirm("Are you sure you want to stop this electrolyser?")) {
-                    return;
-                }
-            }
-            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/setrate");
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Set Rate returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); // Header
-            xhr.send("rate=" + rate);
-        }
-
-        function startElectrolyser(nDevice) {
-            let xhr = new XMLHttpRequest();
-            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/start");
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.send();
-        }
-
-        function stopElectrolyser(nDevice) {
-            let xhr = new XMLHttpRequest();
-            xhr.open('POST', window.location.origin + "/el/" + nDevice + "/stop");
-            xhr.onreadystatechange = function() { // Call a function when the state changes.
-                if (this.readyState === XMLHttpRequest.DONE && this.status !== 200) {
-                    alert("Enable returned status " + this.status + " - " + this.statusText + "\n" + this.responseText);
-                }
-            }
-            xhr.send();
-        }
 
         function receiveStatus() {
             let  Data = document.getElementById("Data");
@@ -130,7 +69,6 @@
             conn.onmessage = function(evt) {
                 try{
                     let jsonData = JSON.parse(evt.data);
-//                    let genKw = jsonData.Electrolysers[0].Flow;
                     let genKw = jsonData.Electrolysers[0].Flow;
                     if (jsonData.Electrolysers.length > 1) {
                         genKw += jsonData.Electrolysers[1].Flow

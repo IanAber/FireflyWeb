@@ -10,6 +10,7 @@ import (
 	"net/smtp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -318,6 +319,7 @@ func (f FaultLevel) String() string {
 type FCM804 struct {
 	bus         *CANBus
 	device      uint16
+	runState    bool      // Used to record the run state when restarting
 	LastUpdate  time.Time // Serves as a heart beat
 	FaultTime   time.Time // Time of the last fault on this cell
 	ClearTime   time.Time // Time the fault was cleared
@@ -360,25 +362,266 @@ type FCM804 struct {
 		SV02              bool // bit6
 		SV04              bool // bit5
 		LouverOpen        bool // bit4
-		DCDCenable        bool // bit3
+		DCDCEnabled       bool // bit3
 		powerfromstack    bool // bit2
 		powerfromexternal bool // bit1
 	}
 	FaultC uint32 // 0x378 byte 0..3
 	FaultD uint32 // 0x378 byte 4..7
+
+	mu sync.Mutex
 }
 
 func NewFCM804(bus *CANBus, device uint16) *FCM804 {
 	fcm := new(FCM804)
 	fcm.device = device
 	fcm.bus = bus
-	fcm.FaultA = 0xFFFFFFFF
-	fcm.FaultB = 0xFFFFFFFF
-	fcm.FaultC = 0xFFFFFFFF
-	fcm.FaultD = 0xFFFFFFFF
+	fcm.FaultA = 0
+	fcm.FaultB = 0
+	fcm.FaultC = 0
+	fcm.FaultD = 0
 	fcm.LastUpdate = time.Now().Add(time.Minute * -1)
 
 	return fcm
+}
+
+// Clear resets all the can data prior to powering up the fuel cell
+func (fcm *FCM804) Clear() {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	fcm.DCDCvoltageSetpoint = 0
+	fcm.DCDCcurrentlimit = 0
+	fcm.FaultD = 0
+	fcm.FaultC = 0
+	fcm.FaultB = 0
+	fcm.FaultA = 0
+	fcm.FaultTime = *new(time.Time)
+	fcm.LouverPosition = 0
+	fcm.FanSPduty = 0
+	fcm.OutletTemp = 0
+	fcm.InletTemp = 0
+	fcm.InRestart = false
+	fcm.AnodePressure = 0
+	fcm.OutputPower = 0
+	fcm.OutputVolts = 0
+	fcm.OutputCurrent = 0
+	fcm.StateInformation.Fault = false
+	fcm.StateInformation.Run = false
+	fcm.StateInformation.Standby = false
+	fcm.StateInformation.Inactive = false
+	fcm.LouverPosition = 0
+	fcm.OutputBits.SV01 = false
+	fcm.OutputBits.SV02 = false
+	fcm.OutputBits.SV04 = false
+	fcm.OutputBits.DCDCEnabled = false
+	fcm.OutputBits.LouverOpen = false
+	fcm.OutputBits.powerfromexternal = false
+	fcm.OutputBits.powerfromstack = false
+	fcm.LoadLogic.OnLoad = false
+	fcm.LoadLogic.FanPulse = false
+	fcm.LoadLogic.Derated = false
+	fcm.LoadLogic.DCDCDisabled = false
+}
+
+// Read access to the fuel cell structure
+func (fcm *FCM804) getLastUpdate() time.Time {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.FaultTime
+}
+func (fcm *FCM804) getClearTime() time.Time {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.ClearTime
+}
+func (fcm *FCM804) getInRestart() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.InRestart
+}
+func (fcm *FCM804) getNumRestarts() int {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.NumRestarts
+}
+func (fcm *FCM804) getSerial() string {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return string(fcm.Serial[:])
+}
+func (fcm *FCM804) getMajor() int {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.Software.Major
+}
+func (fcm *FCM804) getMinor() int {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.Software.Minor
+}
+func (fcm *FCM804) getVersion() int {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.Software.Version
+}
+
+func (fcm *FCM804) getRunHours() uint32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.RunHours
+}
+func (fcm *FCM804) getRunEnergy() uint64 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.RunEnergy
+}
+func (fcm *FCM804) getFaultA() uint32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.FaultA
+}
+func (fcm *FCM804) getFaultB() uint32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.FaultB
+}
+func (fcm *FCM804) getOutputPower() int16 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputPower
+}
+func (fcm *FCM804) getOutputVolts() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputVolts
+}
+func (fcm *FCM804) getOutputCurrent() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputCurrent
+}
+func (fcm *FCM804) getAnodePressure() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.AnodePressure
+}
+func (fcm *FCM804) getOutletTemp() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutletTemp
+}
+func (fcm *FCM804) getInletTemp() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.InletTemp
+}
+func (fcm *FCM804) getDCDCvoltageSetpoint() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.DCDCvoltageSetpoint
+}
+func (fcm *FCM804) getDCDCcurrentlimit() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.DCDCcurrentlimit
+}
+func (fcm *FCM804) getLouverPosition() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.LouverPosition
+}
+func (fcm *FCM804) getFanSPduty() float32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.FanSPduty
+}
+func (fcm *FCM804) getInactive() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.StateInformation.Inactive
+}
+func (fcm *FCM804) getRun() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.StateInformation.Run
+}
+func (fcm *FCM804) getStandby() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.StateInformation.Standby
+}
+func (fcm *FCM804) getFault() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.StateInformation.Fault
+}
+
+func (fcm *FCM804) getDCDCDisabled() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.LoadLogic.DCDCDisabled
+}
+func (fcm *FCM804) getOnLoad() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.LoadLogic.OnLoad
+}
+func (fcm *FCM804) getFanPulse() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.LoadLogic.FanPulse
+}
+func (fcm *FCM804) getDerated() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.LoadLogic.Derated
+}
+
+func (fcm *FCM804) getSV01() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.SV01
+}
+func (fcm *FCM804) getSV02() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.SV02
+}
+func (fcm *FCM804) getSV04() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.SV04
+}
+func (fcm *FCM804) getLouverOpen() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.LouverOpen
+}
+func (fcm *FCM804) getDCDCEnabled() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.DCDCEnabled
+}
+func (fcm *FCM804) getpowerfromstack() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.powerfromstack
+}
+func (fcm *FCM804) getpowerfromexternal() bool {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.OutputBits.powerfromexternal
+}
+
+func (fcm *FCM804) getFaultC() uint32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.FaultC
+}
+func (fcm *FCM804) getFaultD() uint32 {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return fcm.FaultD
 }
 
 //Frame310 contains the serial number
@@ -387,6 +630,8 @@ func (fcm *FCM804) Frame310(frame []byte) {
 	if (frame[0] & 0x80) == 0 {
 		offset = 8
 	}
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	for i, b := range frame {
 		fcm.Serial[i+offset] = b & 0x7f
 	}
@@ -395,6 +640,8 @@ func (fcm *FCM804) Frame310(frame []byte) {
 
 // Frame318 contains Software Version Info
 func (fcm *FCM804) Frame318(frame []byte) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	fcm.Software.Major = int(frame[0])
 	fcm.Software.Minor = int(frame[1])
 	fcm.Software.Version = int(frame[2])
@@ -403,6 +650,8 @@ func (fcm *FCM804) Frame318(frame []byte) {
 
 //Frame320 contains Run Hours and Energy
 func (fcm *FCM804) Frame320(frame []byte) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	fcm.RunHours = binary.BigEndian.Uint32(frame[0:4])
 	fcm.RunEnergy = uint64(binary.BigEndian.Uint32(frame[4:8])) * 20
 	fcm.LastUpdate = time.Now()
@@ -413,6 +662,8 @@ func (fcm *FCM804) Frame328(frame []byte) (changed bool) {
 	a := binary.BigEndian.Uint32(frame[0:4])
 	b := binary.BigEndian.Uint32(frame[4:8])
 
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	// Check to see if either fault has changed since the last 0x328 frame was received
 	changed = ((a ^ fcm.FaultA) != 0) || ((b ^ fcm.FaultB) != 0)
 	fcm.FaultA = a
@@ -424,17 +675,19 @@ func (fcm *FCM804) Frame328(frame []byte) (changed bool) {
 
 //Frame338 Output Power, Output Volts, Output Current, Anode Pressure
 func (fcm *FCM804) Frame338(frame []byte) {
-	//	fmt.Printf("Frame = % x\n", frame)
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	fcm.OutputPower = int16(binary.BigEndian.Uint16(frame[0:2]))
 	fcm.OutputVolts = float32(int16(binary.BigEndian.Uint16(frame[2:4]))) / 100.0
 	fcm.OutputCurrent = float32(int16(binary.BigEndian.Uint16(frame[4:6]))) / 100.0
 	fcm.AnodePressure = float32(binary.BigEndian.Uint16(frame[6:8])) / 10.0
-	//	fmt.Printf("Power = %d | Volts = %f | Amps = %f | Pressure = %f\n", fcm.OutputPower, fcm.OutputVolts, fcm.OutputCurrent, fcm.AnodePressure)
 	fcm.LastUpdate = time.Now()
 }
 
 //Frame348 Outlet Temp, Inlet Temp, DCDC voltage setpoint, DCDC current limit
 func (fcm *FCM804) Frame348(frame []byte) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	fcm.OutletTemp = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
 	fcm.InletTemp = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
 	fcm.DCDCvoltageSetpoint = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
@@ -444,6 +697,8 @@ func (fcm *FCM804) Frame348(frame []byte) {
 
 //Frame358 Louver Position, Fan SP Duty
 func (fcm *FCM804) Frame358(frame []byte) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	fcm.LouverPosition = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
 	fcm.FanSPduty = float32(int16(binary.BigEndian.Uint16(frame[2:4]))) / 100.0
 	fcm.LastUpdate = time.Now()
@@ -451,10 +706,13 @@ func (fcm *FCM804) Frame358(frame []byte) {
 
 //Frame368 State Information
 func (fcm *FCM804) Frame368(frame []byte) (inFault bool) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	inFault = false
 	fcm.StateInformation.Inactive = (frame[0] & 0x80) != 0
 	fcm.StateInformation.Run = (frame[0] & 0x40) != 0
 	fcm.StateInformation.Standby = (frame[0] & 0x20) != 0
+	// Are we changing to a fault condition here?
 	bFault := (frame[0] & 0x10) != 0
 	if bFault && !fcm.StateInformation.Fault {
 		inFault = true
@@ -466,19 +724,21 @@ func (fcm *FCM804) Frame368(frame []byte) (inFault bool) {
 	fcm.LoadLogic.FanPulse = (frame[1] & 0x20) != 0
 	fcm.LoadLogic.Derated = (frame[1] & 0x10) != 0
 
-	fcm.OutputBits.SV01 = (frame[1] & 0x80) != 0
-	fcm.OutputBits.SV02 = (frame[1] & 0x40) != 0
-	fcm.OutputBits.SV04 = (frame[1] & 0x20) != 0
-	fcm.OutputBits.LouverOpen = (frame[1] & 0x10) != 0
-	fcm.OutputBits.DCDCenable = (frame[1] & 0x08) != 0
-	fcm.OutputBits.powerfromstack = (frame[1] & 0x04) != 0
-	fcm.OutputBits.powerfromexternal = (frame[1] & 0x02) != 0
+	fcm.OutputBits.SV01 = (frame[2] & 0x80) != 0
+	fcm.OutputBits.SV02 = (frame[2] & 0x40) != 0
+	fcm.OutputBits.SV04 = (frame[2] & 0x20) != 0
+	fcm.OutputBits.LouverOpen = (frame[2] & 0x10) != 0
+	fcm.OutputBits.DCDCEnabled = (frame[2] & 0x08) != 0
+	fcm.OutputBits.powerfromstack = (frame[2] & 0x04) != 0
+	fcm.OutputBits.powerfromexternal = (frame[2] & 0x02) != 0
 	fcm.LastUpdate = time.Now()
 	return
 }
 
 //Frame378 contains FaultC and FaultD : Returns true if the value has changed
 func (fcm *FCM804) Frame378(frame []byte) (changed bool) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	c := binary.BigEndian.Uint32(frame[0:4])
 	d := binary.BigEndian.Uint32(frame[4:8])
 
@@ -518,9 +778,11 @@ func (fcm *FCM804) ProcessFrame(ID uint32, data []byte) (triggerLogDump bool) {
 	return
 }
 
-//IsSwitchedOn returns true if the cell is transmitting information
+//IsSwitchedOn returns true if the cell is transmitting information at least every half second.
 func (fcm *FCM804) IsSwitchedOn() bool {
-	return time.Now().Sub(fcm.LastUpdate) < (time.Millisecond * 200)
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
+	return time.Now().Sub(fcm.LastUpdate) < (time.Millisecond * 500)
 }
 
 //GetState return a string describing the state of the fuel cell
@@ -528,6 +790,8 @@ func (fcm *FCM804) GetState() (state string) {
 	if !fcm.IsSwitchedOn() {
 		state = "Switched Off"
 	} else {
+		fcm.mu.Lock()
+		defer fcm.mu.Unlock()
 		if fcm.StateInformation.Run {
 			state = state + "Run"
 		}
@@ -554,6 +818,8 @@ func (fcm *FCM804) GetState() (state string) {
 }
 
 func (fcm *FCM804) GetFaultLevel() (FaultLevel, bool) {
+	fcm.mu.Lock()
+	defer fcm.mu.Unlock()
 	fl, reboot := fcm.bus.getMaxFaultLevel(fcm.FaultA, fcm.FaultB, fcm.FaultC, fcm.FaultD)
 	return FaultLevel(fl), reboot
 }
@@ -620,7 +886,6 @@ func getFuelCellErrors(w http.ResponseWriter, _ *http.Request) {
 		}
 	}()
 	for rows.Next() {
-		log.Println("Row")
 		row := new(Row)
 		if err := rows.Scan(&(row.Logged), &(row.FC1FaultA), &(row.FC1FaultB), &(row.FC1FaultC), &(row.FC1FaultD),
 			&(row.FC2FaultA), &(row.FC2FaultB), &(row.FC2FaultC), &(row.FC2FaultD)); err != nil {
@@ -653,11 +918,13 @@ func getFuelCellDetail(w http.ResponseWriter, r *http.Request) {
 		InletTemp     float32
 		Volts         float32
 		Amps          float32
-		State         string
+		Run           bool
+		Inactive      bool
+		Standby       bool
+		Fault         bool
 	}
 	var results []*Row
 	var cell int32
-	var jErr JSONError
 
 	// Set the returned type to application/json
 	w.Header().Set("Content-Type", "application/json")
@@ -673,21 +940,20 @@ func getFuelCellDetail(w http.ResponseWriter, r *http.Request) {
 	default:
 		err := fmt.Errorf("invalid device - %s", device)
 		log.Println(err)
-		jErr.AddError("FuelCell", err)
-		jErr.ReturnError(w, http.StatusBadRequest)
+		ReturnJSONError(w, "FuelCell", err, http.StatusBadRequest, true)
 		return
 	}
 	rows, err := pDB.Query(`select round(UNIX_TIMESTAMP(logged), 1), AnodePressure / 1000 as AnodePressure, Power,
 			ifnull(DecodeFault('A', FaultA),'') as FaultA, ifnull(DecodeFault('B', FaultB),'') as FaultB,
 			ifnull(DecodeFault('C', FaultC),'') as FaultC, ifnull(DecodeFault('D', FaultD),'') as FaultD,
-			OutletTemp / 10 as OutletTemp, InletTemp / 10 as InletTemp, Volts / 10 as Volts, Amps / 10 as Amps, State
+			OutletTemp / 10 as OutletTemp, InletTemp / 10 as InletTemp, Volts / 10 as Volts, Amps / 10 as Amps,
+			ifnull(Run, false) as Run, ifnull(Inactive, false) as Inactive, ifnull(Standby, false) as Standby, ifnull(Fault, false) as Fault
 from FuelCell
 where logged > ?
   and cell = ?
   limit 600`, from, cell)
 	if err != nil {
-		jErr.AddError("FuelCell", err)
-		jErr.ReturnError(w, http.StatusInternalServerError)
+		ReturnJSONError(w, "FuelCell", err, http.StatusInternalServerError, true)
 		return
 	}
 
@@ -697,25 +963,21 @@ where logged > ?
 		}
 	}()
 	for rows.Next() {
-		log.Println("Row found")
 		row := new(Row)
 		if err := rows.Scan(&(row.Logged), &(row.AnodePressure), &(row.Power), &(row.FaultA), &(row.FaultB), &(row.FaultC), &(row.FaultD),
-			&(row.OutletTemp), &(row.InletTemp), &(row.Volts), &(row.Amps), &(row.State)); err != nil {
-			jErr.AddError("FuelCell", err)
-			jErr.ReturnError(w, http.StatusInternalServerError)
+			&(row.OutletTemp), &(row.InletTemp), &(row.Volts), &(row.Amps), &(row.Run), &(row.Inactive), &(row.Standby), &(row.Fault)); err != nil {
+			ReturnJSONError(w, "FuelCell", err, http.StatusInternalServerError, true)
 			return
 		} else {
 			results = append(results, row)
 		}
 	}
 	if len(results) == 0 {
-		jErr.AddErrorString("FuelCell", "No results found - "+from+" | "+device)
-		jErr.ReturnError(w, http.StatusBadRequest)
+		ReturnJSONErrorString(w, "FuelCell", "No results found - "+from+" | "+device, http.StatusBadRequest, true)
 		return
 	}
 	if JSON, err := json.Marshal(results); err != nil {
-		jErr.AddError("FuelCell", err)
-		jErr.ReturnError(w, http.StatusInternalServerError)
+		ReturnJSONError(w, "FuelCell", err, http.StatusInternalServerError, true)
 	} else {
 		if _, err := fmt.Fprintf(w, string(JSON)); err != nil {
 			log.Println(err)
@@ -723,150 +985,56 @@ where logged > ?
 	}
 }
 
-/**
-Start the fuel cell - turn on the gas if it is off and turn on the cell if it is off then turn on the run solenoid
-*/
-func (fc *FCM804) start() error {
-	// If the gas is off turn it on and wait 1 second
-	if !SystemStatus.Relays.GasToFuelCell {
-		strCommand := "gas on"
-		if _, err := sendCommand(strCommand); err != nil {
-			log.Print(err)
-			return err
+func (fcm *FCM804) restartTheFuelCell() {
+	if fcm.runState {
+		if err := startFuelCell(int64(fcm.device)); err != nil {
+			log.Println(err)
+		}
+	} else {
+		if err := turnOnFuelCell(int64(fcm.device)); err != nil {
+			log.Println(err)
 		}
 	}
-	// If the power relay is off turn it on and wait for 3 seconds
-	if !SystemStatus.Relays.FuelCell1Enable && (fc.device == 0) {
-		if err := fc.turnOn(); err != nil {
-			return err
-		}
-		time.Sleep(time.Second * 3)
-	}
-	strCommand := fmt.Sprintf("fc run %d", fc.device)
-	log.Println("Starting fuel cell ", fc.device)
-	if _, err := sendCommand(strCommand); err != nil {
-		log.Print(err)
-		return err
-	}
-	log.Println("Fuel cell", fc.device, "Started")
-	return nil
-}
-
-/**
-Stop the fuel cell
-*/
-func (fc *FCM804) stop() error {
-	switch fc.device {
-	case 0:
-		if !SystemStatus.Relays.FuelCell1Run {
-			return nil
-		}
-	case 1:
-		if !SystemStatus.Relays.FuelCell2Run {
-			return nil
-		}
-	default:
-		log.Print("Cannot stop unknown device %d", fc.device)
-		return fmt.Errorf("Unknown device %d", fc.device)
-	}
-	strCommand := fmt.Sprintf("fc stop %d", fc.device)
-	log.Println("Stopping fuel cell ", fc.device)
-	if _, err := sendCommand(strCommand); err != nil {
-		log.Print(err)
-		return err
-	}
-	log.Println("Fuel cell", fc.device, "Stopped")
-	return nil
-}
-
-/**
-Stop then turn the fuel cell off
-*/
-func (fc *FCM804) turnOff() error {
-	if err := fc.stop(); err != nil {
-		return err
-	}
-	time.Sleep(time.Second * 2)
-
-	log.Println("Turning off fuel cell ", fc.device)
-	strCommand := fmt.Sprintf("fc off %d", fc.device)
-	if _, err := sendCommand(strCommand); err != nil {
-		log.Print(err)
-		return err
-	}
-	log.Println("Fuel cell", fc.device, "turned off")
-	fc.FaultA = 0
-	fc.FaultB = 0
-	fc.FaultC = 0
-	fc.FaultD = 0
-	fc.StateInformation.Fault = false
-	fc.StateInformation.Run = false
-	fc.StateInformation.Inactive = false
-	fc.StateInformation.Standby = false
-	fc.OutputVolts = 0
-	fc.OutputCurrent = 0
-	fc.OutputPower = 0
-	fc.AnodePressure = 0
-	fc.InletTemp = 0
-	fc.OutletTemp = 0
-	fc.FanSPduty = 0
-	fc.LouverPosition = 0
-	fc.DCDCcurrentlimit = 0
-	fc.DCDCvoltageSetpoint = 0
-	return nil
-}
-
-/**
-Turn on the fuel cell
-*/
-func (fc *FCM804) turnOn() error {
-	var strCommand string
-	if (fc.device == 0 && !SystemStatus.Relays.FuelCell1Enable) ||
-		(fc.device == 1 && !SystemStatus.Relays.FuelCell2Enable) {
-
-		strCommand = fmt.Sprintf("fc on %d", fc.device)
-		log.Println("Turning on fuel cell", fc.device)
-		if _, err := sendCommand(strCommand); err != nil {
-			log.Print(err)
-			return err
-		}
-	}
-	return nil
 }
 
 /**
 Check the fuel cell to see if there are any errors and reset it if there are
 */
-func (fc *FCM804) checkFuelCell() {
+func (fcm *FCM804) checkFuelCell() {
+
 	//	log.Println("Checking fuel cell ", device)
-	if !fc.InRestart {
+	if !fcm.InRestart {
 		//		log.Println("Not in restart...")
 		// We are not in a restart so check for faults.
-		if fc.StateInformation.Fault {
+		if fcm.StateInformation.Fault {
 			//			log.Printf("Errors found |%s|%s|%s|%s|\n", fc.FaultFlagA, fc.FaultFlagB, fc.FaultFlagC, fc.FaultFlagD)
 			// There is a fault so check the time
-			if fc.FaultTime == *new(time.Time) {
+			if fcm.FaultTime == *new(time.Time) {
 				// Time is blank so record the time and log the fault
-				fc.FaultTime = time.Now()
-				log.Printf("Fuel Cell %d Error : %08x|%08x|%08x|%08x", fc.device, fc.FaultA, fc.FaultB, fc.FaultC, fc.FaultD)
+				fcm.FaultTime = time.Now()
+				log.Printf("Fuel Cell %d Fault : %08x|%08x|%08x|%08x", fcm.device, fcm.FaultA, fcm.FaultB, fcm.FaultC, fcm.FaultD)
 			} else {
 				// how long has the fault been present?
 				t := time.Now().Add(0 - time.Minute)
-				// If it has been more than a minute, and we have only logged 3 faults,
+				// If it has been more than a minute, and we have only logged MAXFUELCELLRESTARTS faults,
 				// then restart the fuel cell.
-				if fc.FaultTime.Before(t) && fc.NumRestarts < MAXFUELCELLRESTARTS {
-					log.Println("Restarting fuel cell ", fc.device)
-					fc.InRestart = true
-					fc.NumRestarts++
+				if fcm.FaultTime.Before(t) && fcm.NumRestarts < MAXFUELCELLRESTARTS {
+					log.Println("Restarting fuel cell ", fcm.device)
+					fcm.InRestart = true
+					fcm.NumRestarts++
+					if fcm.device == 0 {
+						fcm.runState = SystemStatus.Relays.FuelCell1Run
+					} else {
+						fcm.runState = SystemStatus.Relays.FuelCell2Run
+					}
 					go func() {
-						if err := fc.turnOff(); err != nil {
+						if err := turnOffFuelCell(int64(fcm.device)); err != nil {
 							log.Println(err)
 						}
 					}()
+
 					time.AfterFunc(OFFTIMEFORFUELCELLRESTART, func() {
-						if err := fc.start(); err != nil {
-							log.Println(err)
-						}
+						fcm.restartTheFuelCell()
 					})
 					err := smtp.SendMail("smtp.titan.email:587",
 						smtp.PlainAuth("", "pi@cedartechnology.com", "7444561", "smtp.titan.email"),
@@ -874,25 +1042,27 @@ func (fc *FCM804) checkFuelCell() {
 To: Ian.Abercrombie@cedartechnology.com
 Subject: Fuelcell Error encountered
 The fuel cell has reported an error. I am attempting to restart it.
-Fault A = `+strings.Join(getFuelCellError('A', fc.FaultA), " : ")+`
-Fault B = `+strings.Join(getFuelCellError('B', fc.FaultB), " : ")+`
-Fault C = `+strings.Join(getFuelCellError('C', fc.FaultC), " : ")+`
-Fault D = `+strings.Join(getFuelCellError('D', fc.FaultD), " : ")+`
-Restart number = `+strconv.Itoa(fc.NumRestarts)))
+Fault A = `+strings.Join(getFuelCellError('A', fcm.FaultA), " : ")+`
+Fault B = `+strings.Join(getFuelCellError('B', fcm.FaultB), " : ")+`
+Fault C = `+strings.Join(getFuelCellError('C', fcm.FaultC), " : ")+`
+Fault D = `+strings.Join(getFuelCellError('D', fcm.FaultD), " : ")+`
+Restart number = `+strconv.Itoa(fcm.NumRestarts)))
 					if err != nil {
 						log.Println(err)
 					}
 				}
-				fc.ClearTime = *new(time.Time)
+				fcm.ClearTime = *new(time.Time)
 			}
 		} else {
-			fc.FaultTime = *new(time.Time)
-			if fc.ClearTime == fc.FaultTime {
-				fc.ClearTime = time.Now()
+			// Clear the fault time set the clear time if it is blank
+			fcm.FaultTime = *new(time.Time)
+			if fcm.ClearTime == fcm.FaultTime {
+				fcm.ClearTime = time.Now()
 			} else {
-				// If it has been 5 minutes since we saw the clear then set the numRestarts to 0
-				if time.Since(fc.ClearTime) > (time.Minute * 5) {
-					fc.NumRestarts = 0
+				// If clear time is not blank, but it has been 5 minutes since we saw the clear then set the numRestarts to 0 and clear the time
+				if time.Since(fcm.ClearTime) > (time.Minute * 5) {
+					fcm.NumRestarts = 0
+					fcm.ClearTime = fcm.FaultTime
 				}
 			}
 		}
