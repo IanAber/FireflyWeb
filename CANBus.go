@@ -35,6 +35,7 @@ type CANBus struct {
 	lastLoggedEvent string             // Event date/time for the most recently logged event
 	waitForLogger   bool               // If true, the current buffer will be saved when the next 0x400 frame with an ID of 0 is received
 	ringCount       int                // Number of records in the ring buffer - We will not write log files with less than 960 entries
+	LogStatement    *sql.Stmt          // Prepared statement to log CAN frames
 }
 
 type CANFaultDefinition struct {
@@ -177,7 +178,7 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 		if fcm.ProcessFrame(frameID, frm.Data[:]) {
 			// We got a fault condition change, so we should wait until the current 0x400 frame sequence completes then log the buffer
 			pLogger.waitForLogger = true
-			debugPrint("Error found - Waiting for a full frame to recodrd the data.")
+			debugPrint("Error found - Waiting for a full frame to record the data.")
 		}
 		// We only record 0x40x frames
 		return
@@ -225,7 +226,8 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 			pLogger.ringEnd = 0
 			// Log the current frame to the database
 			if pDB != nil {
-				_, err := pDB.Exec(LoggerSQLStatement, frm.ID, data, pLogger.onDemandTime, true)
+				_, err := pLogger.LogStatement.Exec(frm.ID, data, pLogger.onDemandTime, true)
+				//				_, err := pDB.Exec(LoggerSQLStatement, frm.ID, data, pLogger.onDemandTime, true)
 				if err != nil {
 					log.Println(err)
 					if err := pDB.Close(); err != nil {
@@ -238,6 +240,22 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 					pLogger.onDemandEnd = time.Now()
 					pLogger.onDemandTime = *new(time.Time) // Clear the start time
 					return
+				}
+			} else {
+				log.Print("Database is not connected in CAN logger")
+				var err error
+				pDB, err = connectToDatabase()
+				if err != nil {
+					log.Print("Failed to connect ot the database - ", err)
+				} else {
+					pLogger.LogStatement, err = pDB.Prepare(LoggerSQLStatement)
+					if err != nil {
+						log.Print("Failed to prepare the CAN logger sttement - ", err)
+						if err := pDB.Close(); err != nil {
+							log.Print(err)
+						}
+						pDB = nil
+					}
 				}
 			}
 		}
@@ -301,6 +319,11 @@ func (pLogger *CANBus) CanBusMonitor() {
 		if err != nil {
 			log.Println("CAN interface not available.", err)
 		} else {
+			pLogger.LogStatement, err = pDB.Prepare(LoggerSQLStatement)
+			if err != nil {
+				log.Print("Error setting up the CAN logger - ", err)
+				return
+			}
 			bus.SubscribeFunc(pLogger.handleCANFrame)
 			err = bus.ConnectAndPublish()
 			if err != nil {
@@ -398,8 +421,8 @@ func ReturnCanDumpResult(w http.ResponseWriter, rows *sql.Rows, file *os.File) {
 			ReturnJSONError(w, "canDump", err, 500, true)
 			return
 		}
-		if _, err = fmt.Fprintf(file, "%6d)%13.3f  2  Rx        %04X -  8    % X\n",
-			rownum, oneRow.logged, oneRow.ID, buf); err != nil {
+		if _, err = fmt.Fprintf(file, "%6d)%13.0f  2  Rx        %04X -  8    % X\n",
+			rownum, oneRow.logged*1000, oneRow.ID, buf); err != nil {
 			log.Println(err)
 			return
 		}

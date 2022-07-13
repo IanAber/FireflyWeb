@@ -7,6 +7,7 @@
 
         <style>
             td.label {
+                width:30%;
                 text-align:right;
                 border-right-style:solid;
                 border-right-width:2px;
@@ -34,6 +35,47 @@
                 color:white;
                 padding:10px
             }
+            table.Relays {
+                border-color: darkslategray;
+                border-width: medium;
+                border-style: solid;
+                background-color: lightseagreen;
+            }
+            table.Electrolyser {
+                width:48vw;
+                border-color: darkslategray;
+                border-width: medium;
+                border-style: solid;
+                background-color: azure;
+            }
+            table.Dryer {
+                width: 28vw;
+                border-color: darkslategray;
+                border-width: medium;
+                border-style: solid;
+                background-color: azure;
+            }
+            table.FuelCell {
+                width: 39vw;
+                border-color: darkslategray;
+                border-width: medium;
+                border-style: solid;
+                background-color: seashell;
+            }
+            table.Gas {
+                width: 30vw;
+                border-color: darkslategray;
+                border-width: medium;
+                border-style: solid;
+                background-color: lightseagreen;
+            }
+            table.Water {
+                width: 25vw;
+                border-color: darkslategray;
+                border-width: medium;
+                border-style: solid;
+                background-color: cornflowerblue;
+            }
         </style>
         <script type="text/javascript">
             function receiveStatus() {
@@ -52,23 +94,29 @@
 
                         let rl = jsonData.relays
                         if (rl !== undefined) {
-                            if (rl.el0) {
-                                let rlel0 = $("#rlel0");
-                                rlel0.removeClass("RelayOff");
-                                rlel0.addClass("RelayOn");
-                            } else {
-                                rlel0.removeClass("RelayOn");
-                                rlel0.addClass("RelayOff");
-                            }
+                            let rlel0 = $("#rlel0");
                             let rlel1 = $("#rlel1");
-                            if (rl.el1) {
+                            let rlgas = $("#rlgas");
+                            let rlfcrun0 = $("#rlfc0run");
+                            let rlfcen1 = $("#rlfc1en");
+                            let rlfcrun1 = $("#rlfc1run");
+                            let rldrain = $("#rldrain");
+                            let rlfcen0 = $("#rlfc0en");
+
+                            if (rl.el0) {
                                 rlel0.removeClass("RelayOff");
                                 rlel0.addClass("RelayOn");
                             } else {
                                 rlel0.removeClass("RelayOn");
                                 rlel0.addClass("RelayOff");
                             }
-                            let rlgas = $("#rlgas")
+                            if (rl.el1) {
+                                rlel1.removeClass("RelayOff");
+                                rlel1.addClass("RelayOn");
+                            } else {
+                                rlel1.removeClass("RelayOn");
+                                rlel1.addClass("RelayOff");
+                            }
                             if (rl.gas) {
                                 rlgas.removeClass("RelayOff");
                                 rlgas.addClass("RelayOn");
@@ -76,7 +124,6 @@
                                 rlgas.removeClass("RelayOn");
                                 rlgas.addClass("RelayOff");
                             }
-                            let rlfcen0 = $("#rlfc0en")
                             if (rl.fc0en) {
                                 rlfcen0.removeClass("RelayOff");
                                 rlfcen0.addClass("RelayOn");
@@ -84,7 +131,6 @@
                                 rlfcen0.removeClass("RelayOn");
                                 rlfcen0.addClass("RelayOff");
                             }
-                            let rlfcrun0 = $("#rlfc0run")
                             if (rl.fc0run) {
                                 rlfcrun0.removeClass("RelayOff");
                                 rlfcrun0.addClass("RelayOn");
@@ -92,7 +138,6 @@
                                 rlfcrun0.removeClass("RelayOn");
                                 rlfcrun0.addClass("RelayOff");
                             }
-                            let rlfcen1 = $("#rlfc1en")
                             if (rl.fc1en) {
                                 rlfcen1.removeClass("RelayOff");
                                 rlfcen1.addClass("RelayOn");
@@ -100,7 +145,6 @@
                                 rlfcen1.removeClass("RelayOn");
                                 rlfcen1.addClass("RelayOff");
                             }
-                            let rlfcrun1 = $("#rlfc1run")
                             if (rl.fc1run) {
                                 rlfcrun1.removeClass("RelayOff");
                                 rlfcrun1.addClass("RelayOn");
@@ -108,7 +152,6 @@
                                 rlfcrun1.removeClass("RelayOn");
                                 rlfcrun1.addClass("RelayOff");
                             }
-                            let rldrain = $("#rldrain")
                             if (rl.drain) {
                                 rldrain.removeClass("RelayOff");
                                 rldrain.addClass("RelayOn");
@@ -128,7 +171,7 @@
                                 $("#dryerOn").css({display: "unset"});
                                 $("#dryerOff").css({display: "none"});
                                 $("#el0SysState").text(el.systemstate);
-                                $("#el0ElState").text(el.state);
+                                $("#el0ElState").text(el.elstate);
                                 $("#el0Level").text(el.level);
                                 $("#el0Temp").text(el.temp + "℃");
                                 $("#el0InnerPressure").text(el.innerpressure + " Bar");
@@ -168,7 +211,7 @@
                                 $("#el1On").css({display: "unset"});
                                 $("#el1Off").css({display: "none"});
                                 $("#el1SysState").text(el.systemstate);
-                                $("#el1ElState").text(el.state);
+                                $("#el1ElState").text(el.elstate);
                                 $("#el1Level").text(el.level);
                                 $("#el1Temp").text(el.temp + "℃");
                                 $("#el1InnerPressure").text(el.innerpressure + " Bar");
@@ -270,8 +313,8 @@
                 xmlhttp.responseType = "json";
                 xmlhttp.onreadystatechange = function () { //Call a function when the state changes.
                     if (xmlhttp.readyState === 4 && xmlhttp.status !== 200) {
-                        if (xmlhttp.response.Errors !== null) {
-                            xmlhttp.response.Errors.forEach(function(value, index, array){ alert(value.Device + "\n" + value.Err);});
+                        if (xmlhttp.response.errors !== null) {
+                            xmlhttp.response.errors.forEach(function(value, index, array){ alert(value.Device + "\n" + value.Err);});
                         } else {
                             alert(xmlhttp.responseText);
                         }
@@ -339,7 +382,7 @@
     </head>
     <body>
         <div>
-            <table>
+            <table class="Relays">
                 <tr>
                     <th colspan=8>Relay Status</th>
                 </tr>
@@ -364,7 +407,10 @@
         </div>
         <div id="el0">
             <div id="el0On" style="display:none">
-                <table>
+                <table class="Electrolyser">
+                    <tr>
+                        <th colspan="4"><h2>Electrolyser 0</h2></th>
+                    </tr>
                     <tr>
                         <td class="label">System State</td>
                         <td><span id="el0SysState"></span></td>
@@ -416,7 +462,10 @@
                 <h3 style="text-align:center">Electrolyser is switched OFF</h3>
             </div>
             <div id="el1On" style="display:none">
-                <table>
+                <table class="Electrolyser">
+                    <tr>
+                        <th colspan="4"><h2>Electrolyser 1</h2></th>
+                    </tr>
                     <tr>
                         <td class="label">System State</td>
                         <td><span id="el1SysState"></span></td>
@@ -467,7 +516,10 @@
                 <h2>Dryer OFF</h2>
             </div>
             <div id="dryerOn" style="float:left; display:none">
-                <table>
+                <table class="Dryer">
+                    <tr>
+                        <th colspan=4><h2>Dryer</h2></th>
+                    </tr>
                     <tr>
                         <td class="label">Temperature 0</td>
                         <td><span id="dryerTemp0"></span></td>
@@ -483,7 +535,7 @@
                     <tr>
                         <td class="label">Input Pressure</td>
                         <td><span id="dryerInputPressure"></span></td>
-                        <td class="label">Ouput Pressure</td>
+                        <td class="label">Output Pressure</td>
                         <td><span id="dryerOutputPressure"></span></td>
                     </tr>
                     <tr>
@@ -504,7 +556,10 @@
                 <h3 style="text-align:center">Fuel Cell is switched OFF</h3>
             </div>
             <div id="FuelCell0On" style="display:none">
-                <table>
+                <table class="FuelCell">
+                    <tr>
+                        <th colspan="4"><h2>Fuel Cell 0</h2></th>
+                    </tr>
                     <tr>
                         <td class="label">Serial Number</td>
                         <td><span id="fc0SerialNumber"></span></td>
@@ -545,10 +600,14 @@
                         <td class="label">Fault Flag D</td>
                         <td><span id="fc0FaultD"></span></td>
                     </tr>
+                    <tr>
+                        <td colspan="4">
+                            <a href="/fc/0/restart">Restart</a>
+                        </td>
+                    </tr>
                 </table>
             </div>
             <br />
-            <a href="/fc/0/restart">Restart</a>
         </div>
         <div id="FuelCell1" style="float:left; width:48%; display:none">
             <h2>Fuel Cell 1</h2>
@@ -556,7 +615,10 @@
                 <h3 style="text-align:center">Fuel Cell is switched OFF</h3>
             </div>
             <div id="FuelCell1On" style="display:none">
-                <table>
+                <table class="FuelCell">
+                    <tr>
+                        <th colspan="4"><h2>Fuel Cell 1</h2></th>
+                    </tr>
                     <tr>
                         <td class="label">Serial Number</td>
                         <td><span id="fc1SerialNumber"></span></td>
@@ -597,14 +659,22 @@
                         <td class="label">Fault Flag D</td>
                         <td><span id="fc1FaultD"></span></td>
                     </tr>
+                    <tr>
+                        <td colspan="4">
+                            <a href="/fc/1/restart">Restart</a>
+                        </td>
+                    </tr>
                 </table>
             </div>
             <br />
-            <a href="/fc/1/restart">Restart</a>
         </div>
         <div style="float:left; clear:both; width:48%">
-            <h2>Gas</h2>
-            <table>
+            <table class="Gas">
+                <tr>
+                    <th colspan="4">
+                        <h2>Gas</h2>
+                    </th>
+                </tr>
                 <tr>
                     <td class="label">Fuel Cell Pressure</td>
                     <td><span id="gasFuelCellPressure"></span></td>
@@ -614,10 +684,14 @@
             </table>
         </div>
         <div style="float:left; width:48%">
-            <h2>TDS</h2>
-            <table>
+            <table class="Water">
                 <tr>
-                    <td class="label">Total Dissolved Solids</td>
+                    <th colspan="2">
+                        <h2>Water</h2>
+                    </th>
+                </tr>
+                <tr>
+                    <td class="label" style="width:70%">Total Dissolved Solids</td>
                     <td><span id="TDS"></span></td>
                 </tr>
             </table>

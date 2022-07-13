@@ -677,9 +677,8 @@ func (e *Electrolyser) SendRateToElectrolyser(rate float32) error {
 
 // SetProduction sets the elecctrolyser to the rate given 0, 60..100
 func (e *Electrolyser) SetProduction(rate uint8) {
-	if params.DebugOutput {
-		log.Println("Set electrolyser", e.ip, "to", rate)
-	}
+	debugPrint("Set electrolyser %s to %d", e.ip, rate)
+
 	if !e.CheckConnected() {
 		return
 	}
@@ -702,9 +701,7 @@ func (e *Electrolyser) SetProduction(rate uint8) {
 		}
 		// If the electrolyser is in Idle then start it.
 		if e.status.ElState == ElIdle {
-			if params.DebugOutput {
-				log.Println("Electrolyser is idle so sending a start command.")
-			}
+			debugPrint("Electrolyser is idle so sending a start command.")
 			e.Start(false)
 		}
 	}
@@ -781,16 +778,14 @@ func (e *Electrolyser) Start(overrideHoldOff bool) bool {
 			return false
 		} else {
 			// If successful mark the time so we don't try and stop and start too quickly
-			if params.DebugOutput {
-				log.Println("Electrolyser", e.ip, "started")
-			}
+			debugPrint("Electrolyser %s started", e.ip)
+
 			e.OnOffTime = time.Now()
 			return true
 		}
 	} else {
-		if params.DebugOutput {
-			log.Println("Electrolyser", e.ip, "not started. In holdoff until ", e.OnOffTime.Add(params.ElectrolyserHoldOffTime))
-		}
+		debugPrint("Electrolyser %s not started. In holdoff until %s", e.ip, e.OnOffTime.Add(params.ElectrolyserHoldOffTime).Format("15:04:05"))
+
 	}
 	return false
 }
@@ -837,9 +832,8 @@ func (e *Electrolyser) Stop(overrideHoldOff bool) bool {
 			} else {
 				// If successful mark the time so we don't immediately try and start it again
 				e.OnOffTime = time.Now()
-				if params.DebugOutput {
-					log.Println("Electrolyser", e.ip, "stopped.")
-				}
+				debugPrint("Electrolyser %s stopped", e.ip)
+
 				return true
 			}
 
@@ -848,9 +842,8 @@ func (e *Electrolyser) Stop(overrideHoldOff bool) bool {
 		// If not immediate start a timer if it is not already running and the electrolyser is outputting
 		if e.OffRequested == nil && e.status.ElState == ElSteady {
 			go e.setDelayedStop()
-			if params.DebugOutput {
-				log.Println("Electrolyser", e.ip, "timer started to stop production")
-			}
+			debugPrint("Electrolyser %s timer started to stop production", e.ip)
+
 		}
 	}
 	return false
@@ -869,9 +862,7 @@ func (e *Electrolyser) Preheat() {
 			}
 			e.clientConnected = false
 		} else {
-			if params.DebugOutput {
-				log.Println("Preheat request ignored as temperature is already ", e.status.ElectrolyteTemp, "C")
-			}
+			debugPrint("Preheat request ignored as temperature is already %f C", e.status.ElectrolyteTemp)
 		}
 	}
 }

@@ -63,9 +63,11 @@ func elCommand(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			strCommand = "el2 off"
-			if SystemStatus.Electrolysers[1].status.StackVoltage > jsonFloat32(params.ElectrolyserMaxStackVoltsTurnOff) {
-				ReturnJSONErrorString(w, "Electrolyser", "Electrolyser 1 not turned off because stack voltage is too high.", http.StatusBadRequest, true)
-				return
+			if len(SystemStatus.Electrolysers) > 1 {
+				if SystemStatus.Electrolysers[1].status.StackVoltage > jsonFloat32(params.ElectrolyserMaxStackVoltsTurnOff) {
+					ReturnJSONErrorString(w, "Electrolyser", "Electrolyser 1 not turned off because stack voltage is too high.", http.StatusBadRequest, true)
+					return
+				}
 			}
 		}
 		if _, err := sendCommand(strCommand); err != nil {
@@ -394,9 +396,6 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseJson.Success = true
-	if params.DebugOutput {
-		log.Println("setElectrolyserRate")
-	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
@@ -409,9 +408,7 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	if params.DebugOutput {
-		log.Printf("Set electrolyser : %d", jRate.Rate)
-	}
+	debugPrint("Set electrolyser : %d", jRate.Rate)
 
 	_, err = pDB.Exec("INSERT INTO ElectrolyserRequests (RateRequested) VALUES (?)", jRate.Rate)
 	if err != nil {
@@ -427,12 +424,16 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 	if (SystemStatus.Relays.FuelCell1Run || SystemStatus.Relays.FuelCell2Run) && jRate.Rate > 0 {
 		// Do not allow the electrolysers to run if one or more fuel cells are also running
 		jRate.Rate = 0
-		responseJson.Errors = append(responseJson.Errors, "Fuel Cell is Running")
+
+		for _, el := range SystemStatus.Electrolysers {
+			// Immediate shut down
+			el.Stop(true)
+		}
+		ReturnJSONErrorString(w, "Electrolyser", "One or more Fuel cells are running. All electrolysers are stopped.", http.StatusBadRequest, false)
+		return
 	}
 
-	if params.DebugOutput {
-		log.Println("Set electrolyser rate to", jRate.Rate, "%")
-	}
+	debugPrint("Set electrolyser rate to %d%%", jRate.Rate)
 
 	var elRates Rate
 	if len(SystemStatus.Electrolysers) > 1 {
@@ -447,18 +448,15 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if params.DebugOutput {
-		log.Println("set electrolyser 0 to ", elRates.el0)
-	}
+	debugPrint("set electrolyser 0 to %d%%", elRates.el0)
+
 	err = setElectrolyserRatePercent(elRates.el0, 0)
 	if err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		return
 	}
-	if params.DebugOutput {
-		log.Println("set electrolyser 1 to ", elRates.el1)
-	}
 	if len(SystemStatus.Electrolysers) > 1 {
+		debugPrint("set electrolyser 1 to ", elRates.el1)
 		err = setElectrolyserRatePercent(elRates.el1, 1)
 		if err != nil {
 			ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
@@ -510,12 +508,17 @@ func getElectrolyserRate(w http.ResponseWriter, _ *http.Request) {
 				jReturnData.Rate = 0
 			default:
 				jReturnData.Status = "Active"
-				jReturnData.Rate = int8(((SystemStatus.Electrolysers[0].GetRate() - 60) * 100) / 40)
-				if jReturnData.Rate < 0 {
+				r := SystemStatus.Electrolysers[0].GetRate()
+				if r > 0 {
+					jReturnData.Rate = int8(((r - 60) * 100) / 40)
+					if jReturnData.Rate < 1 {
+						jReturnData.Rate = 1
+					}
+					if jReturnData.Rate > 100 {
+						jReturnData.Rate = 100
+					}
+				} else {
 					jReturnData.Rate = 0
-				}
-				if jReturnData.Rate > 100 {
-					jReturnData.Rate = 100
 				}
 			}
 		} else {

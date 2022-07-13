@@ -16,6 +16,8 @@ import (
 	"io"
 	"log"
 	"math"
+	"runtime"
+
 	//	"log/syslog"
 	syslog "github.com/RackSec/srslog"
 	"net/http"
@@ -214,7 +216,19 @@ var RateMap = map[int]int8{
 
 func debugPrint(format string, args ...interface{}) {
 	if params.DebugOutput {
-		log.Print(format, args)
+		var sErr string
+		if len(args) > 0 {
+			sErr = fmt.Sprintf(format, args...)
+		} else {
+			sErr = format
+		}
+		_, function, line, ok := runtime.Caller(1)
+		if ok {
+			parts := strings.Split(function, "/")
+			log.Printf("%s:%d | %s", parts[len(parts)-1], line, sErr)
+		} else {
+			log.Print(sErr)
+		}
 	}
 }
 
@@ -1487,7 +1501,7 @@ func setGas(w http.ResponseWriter, r *http.Request) {
 	if body.State {
 		err = turnOnGas()
 	} else {
-		_, err = sendCommand("gas off")
+		err = turnOffGas()
 	}
 	if err != nil {
 		ReturnJSONError(w, "Gas", err, http.StatusInternalServerError, true)
@@ -1829,6 +1843,19 @@ func turnOnGas() error {
 		return err
 	}
 	time.Sleep(time.Second * 2)
+	return nil
+}
+
+func turnOffGas() error {
+	if !SystemStatus.Relays.GasToFuelCell {
+		// Gas is already off
+		return nil
+	}
+	if _, err := sendCommand("gas off"); err != nil {
+		log.Print(err)
+		return err
+	}
+	time.Sleep(time.Second)
 	return nil
 }
 

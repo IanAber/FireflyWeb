@@ -603,8 +603,12 @@ func stopFuelCell(device int64) error {
 		log.Print("Cannot stop unknown device %d", device)
 		return fmt.Errorf("Unknown device %d", device)
 	}
+	// Turn the gas off first to prevent an overpressure spike when the Fuel Cell suddenly stops
+	if err := turnOffGas(); err != nil {
+		log.Print(err)
+	}
+
 	strCommand := fmt.Sprintf("fc stop %d", device)
-	//	log.Println("Stopping fuel cell ", device)
 	if _, err := sendCommand(strCommand); err != nil {
 		log.Print(err)
 		return err
@@ -614,7 +618,7 @@ func stopFuelCell(device int64) error {
 		canBus.setOnDemandRecording(time.Now().Add(time.Second * 15))
 	}
 	//	log.Println("Fuel cell", device, "Stopped")
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 10)
 	return nil
 }
 
@@ -647,7 +651,12 @@ func restartFc(w http.ResponseWriter, r *http.Request) {
 		if err := turnOffFuelCell(0); err != nil {
 			log.Print(err)
 		}
-		time.AfterFunc(OFFTIMEFORFUELCELLRESTART, func() {
+		delayTime := OFFTIMEFORFUELCELLRESTART
+		if len(canBus.fuelCell) > 0 {
+			// If this is not the first restart, add 10 seconds delay for each time we have tried
+			delayTime = OFFTIMEFORFUELCELLRESTART + (time.Second * time.Duration(canBus.fuelCell[0].NumRestarts*10))
+		}
+		time.AfterFunc(delayTime, func() {
 			if err := startFuelCell(0); err != nil {
 				log.Println("Error starting fuel cell 0 -", err)
 			}
