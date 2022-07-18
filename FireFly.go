@@ -40,10 +40,35 @@ const MAXFUELCELLRESTARTS = 10
 const OFFTIMEFORFUELCELLRESTART = time.Second * 20
 const FUELCELLENABLETORUNDELAY = time.Second * 2
 const GASONDELAY = time.Second * 2
+const GASOFFDELAY = time.Second * 2
 const convertPSIToBar = 14.503773773
-const CANDUMPSQL = `SELECT UNIX_TIMESTAMP(logged) AS logged, ID, canData FROM CAN_Data WHERE logged BETWEEN ? AND ?`
-const CANDUMPEVENTSQL = `SELECT UNIX_TIMESTAMP(logged) AS logged, ID, canData FROM CAN_Data WHERE Event = ?`
-const LISTCANEVENTSSQL = `SELECT DISTINCT Event, OnDemand FROM CAN_Data WHERE Event IS NOT NULL ORDER BY Event DESC LIMIT 50`
+const CANDUMPSQL = `SELECT UNIX_TIMESTAMP(logged) AS logged, Cell
+     , data00, data00offsetms, data01, data01offsetms, data02, data02offsetms, data03, data03offsetms, data04, data04offsetms
+     , data05, data05offsetms, data06, data06offsetms, data07, data07offsetms, data08, data08offsetms, data09, data09offsetms
+     , data0A, data0Aoffsetms, data0B, data0Boffsetms, data0C, data0Coffsetms, data0D, data0Doffsetms, data0E, data0Eoffsetms
+     , data0F, data0Foffsetms, data10, data10offsetms, data11, data11offsetms, data12, data12offsetms, data13, data13offsetms
+     , data14, data14offsetms, data15, data15offsetms, data16, data16offsetms, data17, data17offsetms, data18, data18offsetms
+     , data19, data19offsetms, data1A, data1Aoffsetms, data1B, data1Boffsetms, data1C, data1Coffsetms, data1D, data1Doffsetms
+     , data1E, data1Eoffsetms, data1F, data1Foffsetms, data20, data20offsetms, data21, data21offsetms, data22, data22offsetms
+     , data23, data23offsetms, data24, data24offsetms, data25, data25offsetms, data26, data26offsetms, data27, data27offsetms
+     , data28, data28offsetms, data29, data29offsetms, data2A, data2Aoffsetms, data2B, data2Boffsetms, data2C, data2Coffsetms
+     , data2D, data2Doffsetms, data2E, data2Eoffsetms
+FROM firefly.CAN_Trace
+ WHERE logged BETWEEN ? AND ?`
+const CANDUMPEVENTSQL = `SELECT UNIX_TIMESTAMP(logged) AS logged, Cell
+     , data00, data00offsetms, data01, data01offsetms, data02, data02offsetms, data03, data03offsetms, data04, data04offsetms
+     , data05, data05offsetms, data06, data06offsetms, data07, data07offsetms, data08, data08offsetms, data09, data09offsetms
+     , data0A, data0Aoffsetms, data0B, data0Boffsetms, data0C, data0Coffsetms, data0D, data0Doffsetms, data0E, data0Eoffsetms
+     , data0F, data0Foffsetms, data10, data10offsetms, data11, data11offsetms, data12, data12offsetms, data13, data13offsetms
+     , data14, data14offsetms, data15, data15offsetms, data16, data16offsetms, data17, data17offsetms, data18, data18offsetms
+     , data19, data19offsetms, data1A, data1Aoffsetms, data1B, data1Boffsetms, data1C, data1Coffsetms, data1D, data1Doffsetms
+     , data1E, data1Eoffsetms, data1F, data1Foffsetms, data20, data20offsetms, data21, data21offsetms, data22, data22offsetms
+     , data23, data23offsetms, data24, data24offsetms, data25, data25offsetms, data26, data26offsetms, data27, data27offsetms
+     , data28, data28offsetms, data29, data29offsetms, data2A, data2Aoffsetms, data2B, data2Boffsetms, data2C, data2Coffsetms
+     , data2D, data2Doffsetms, data2E, data2Eoffsetms
+FROM firefly.CAN_Trace
+ WHERE Event = ?`
+const LISTCANEVENTSSQL = `SELECT DISTINCT Event, OnDemand FROM CAN_Trace WHERE Event IS NOT NULL ORDER BY Event DESC LIMIT 50`
 const redirectToMainMenuScript = `
 <script>
 	var tID = setTimeout(function () {
@@ -1842,7 +1867,7 @@ func turnOnGas() error {
 		log.Print(err)
 		return err
 	}
-	time.Sleep(time.Second * 2)
+	time.Sleep(params.GasOnDelay)
 	return nil
 }
 
@@ -1855,7 +1880,6 @@ func turnOffGas() error {
 		log.Print(err)
 		return err
 	}
-	time.Sleep(time.Second)
 	return nil
 }
 

@@ -623,6 +623,39 @@ func stopFuelCell(device int64) error {
 }
 
 /***
+PowerDown waits for the fuel cell to stop delivering power then turns the enable relay off
+If it is outputting power it will wait 2 seconds and try again. After 2 minutes it will turn the fuel cell off even if it didn't stop
+*/
+func PowerDown(device int64) {
+	strCommand := fmt.Sprintf("fc off %d", device)
+	for i := 0; i < 60; i++ {
+		// If the fuel cell is registered and we have data from it...
+		if len(canBus.fuelCell) > int(device) {
+			// If the fuel cell is not outputting power turn it off
+			if canBus.fuelCell[uint16(device)].OutputPower <= 0 {
+				if _, err := sendCommand(strCommand); err != nil {
+					log.Print(err)
+				} else {
+					canBus.clearEventDateTime()
+					return
+				}
+			} else {
+				// Just to be sure, tell it to stop again
+				if err := stopFuelCell(device); err != nil {
+					log.Print(err)
+				}
+				// Wait 2 seconds and try again
+				time.Sleep(time.Second * 2)
+			}
+		}
+	}
+	log.Printf("Times out waiting for fuel cell %d to stop. Turning fuel cell off now!", device)
+	if _, err := sendCommand(strCommand); err != nil {
+		log.Print(err)
+	}
+}
+
+/***
 turnOffFuelCell first stops then turns off the fuel cell. device is 0 based
 */
 func turnOffFuelCell(device int64) error {
@@ -630,12 +663,14 @@ func turnOffFuelCell(device int64) error {
 		log.Print(err)
 	}
 
-	strCommand := fmt.Sprintf("fc off %d", device)
+	go PowerDown(device)
+
+	//	strCommand := fmt.Sprintf("fc off %d", device)
 	//	log.Println("Turning fuel cell", device, "off")
-	if _, err := sendCommand(strCommand); err != nil {
-		log.Print(err)
-		return err
-	}
+	//	if _, err := sendCommand(strCommand); err != nil {
+	//		log.Print(err)
+	//		return err
+	//	}
 	//	log.Println("Fuel cell", device, "turned off")
 	return nil
 }
@@ -651,6 +686,18 @@ func restartFc(w http.ResponseWriter, r *http.Request) {
 		if err := turnOffFuelCell(0); err != nil {
 			log.Print(err)
 		}
+		// Wait up to 3 minutes for the fuel cell to be turned off
+		for i := 0; i < 180; i++ {
+			if SystemStatus.Relays.FuelCell1Enable {
+				time.Sleep(time.Second * 2)
+			}
+		}
+		if SystemStatus.Relays.FuelCell1Enable {
+			log.Print("Fuel Cell %d failed to turn off")
+			ReturnJSONErrorString(w, "Fuel Cell", "Failed to turn the Fuel Cell off.", http.StatusInternalServerError, true)
+			return
+		}
+
 		delayTime := OFFTIMEFORFUELCELLRESTART
 		if len(canBus.fuelCell) > 0 {
 			// If this is not the first restart, add 10 seconds delay for each time we have tried

@@ -71,6 +71,7 @@ type JsonSettings struct {
 	FuelCellLogOnRun                 bool          `json:"fuelCellLogOnRun"`
 	FuelCellLogOnEnable              bool          `json:"fuelCellLogOnEnable"`
 	GasOnDelay                       time.Duration `json:"gasOnDelay"`
+	GasOffDelay                      time.Duration `json:"gasOffDelay"`
 	DebugOutput                      bool          `json:"debugOutputEnable"`
 	filepath                         string
 }
@@ -86,6 +87,8 @@ func NewJsonSettings() *JsonSettings {
 	s.FuelCellMaxRestarts = MAXFUELCELLRESTARTS
 	s.FuelCellRestartOffTime = OFFTIMEFORFUELCELLRESTART
 	s.FuelCellEnableToRunDelay = FUELCELLENABLETORUNDELAY
+	s.GasOnDelay = GASONDELAY
+	s.GasOffDelay = GASOFFDELAY
 	s.FuelCellLogOnRun = false
 	s.FuelCellLogOnEnable = false
 	s.GasOnDelay = GASONDELAY
@@ -220,7 +223,8 @@ func getSettings(w http.ResponseWriter, _ *http.Request) {
 	printOptions(w, int(params.FuelCellMaxRestarts), 1, 25, "", "fcmaxrestarts", "Fuel Cell Maximumn Resatrts")
 	printOptions(w, int(params.FuelCellRestartOffTime.Seconds()), 0, 120, "seconds", "fcrestarttime", "Fuel Cell off time when restarting")
 	printOptions(w, int(params.FuelCellEnableToRunDelay.Seconds()), 0, 30, "seconds", "fcenabletorun", "Fuel Cell delay between on and run")
-	printOptions(w, int(params.GasOnDelay.Seconds()), 0, 30, "seconds", "gasondelay", "Delay after turning gas on")
+	printOptions(w, int(params.GasOnDelay.Seconds()), 0, 120, "seconds", "gasondelay", "Delay after turning gas on before run")
+	printOptions(w, int(params.GasOffDelay.Seconds()), 0, 5, "seconds", "gasoffdelay", "Delay after run before turning gas off")
 	printSwitch(w, params.DebugOutput, "debug", "Enable debug output")
 	printSwitch(w, params.FuelCellLogOnRun, "logonrun", "Generate fuel cell log when running")
 	printSwitch(w, params.FuelCellLogOnEnable, "logonenable", "Generate fuel cell log when enabled")
@@ -250,6 +254,7 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 	fcRestartOffTime := r.Form.Get("fcrestarttime")
 	fcEnableToRunTime := r.Form.Get("fcenabletorun")
 	gasOnDelay := r.Form.Get("gasondelay")
+	gasOffDelay := r.Form.Get("gasoffdelay")
 	debug := r.Form.Get("debug")
 	logOnRun := r.Form.Get("logonrun")
 	logOnEnable := r.Form.Get("logonenable")
@@ -317,6 +322,14 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 		} else {
 			params.GasOnDelay = time.Second * time.Duration(t)
+		}
+	}
+	if len(gasOffDelay) > 0 {
+		t, err := strconv.Atoi(gasOffDelay)
+		if err != nil {
+			log.Println(err)
+		} else {
+			params.GasOffDelay = time.Second * time.Duration(t)
 		}
 	}
 	params.DebugOutput = (len(debug) > 0)

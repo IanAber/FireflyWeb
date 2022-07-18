@@ -1002,6 +1002,8 @@ Check the fuel cell to see if there are any errors and reset it if there are
 */
 func (fcm *FCM804) checkFuelCell() {
 
+	//// Ignore checks.
+	//return
 	//	log.Println("Checking fuel cell ", device)
 	if !fcm.InRestart {
 		//		log.Println("Not in restart...")
