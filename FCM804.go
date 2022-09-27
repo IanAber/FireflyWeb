@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 	"net/smtp"
@@ -14,280 +13,12 @@ import (
 	"time"
 )
 
-//
-//Fault Flag A bit field definitions
-//
-//
-//const AnodeOverPressure = 0
-//const AnodeUnderPressure = 1
-//const Stack1OverCurrent = 2
-//const Outlet1OverTemperature = 3
-//const Stack1MinCellUndervoltage = 4
-//const Inlet1OverTemperature = 5
-//const SafetyObserverWatchdogTrip = 6
-//const BoardOverTemperature = 7
-//const SafetyObserverFanTrip = 8
-//const ValveDefeatCheckFault = 9
-//const Stack1UnderVoltage = 10
-//const Stack1OverVoltage = 11
-//const SafetyObserverMismatch = 12
-//const Stack2MinCellUndervoltage = 13
-//const SafetyObserverPressureTrip = 14
-//const SafetyObserverBoardTxTrip = 15
-//const Stack3MinCellUndervoltage = 16
-//const SafetyObserverSoftwareTrip = 17
-//const Fan2NoTacho = 18
-//const Fan1NoTacho = 19
-//const Fan3NoTacho = 20
-//const Fan3ErrantSpeed = 21
-//const Fan2ErrantSpeed = 22
-//const Fan1ErrantSpeed = 23
-//const Sib1Fault = 24
-//const Sib2Fault = 25
-//const Sib3Fault = 26
-//const Inlet1TxSensorFault = 27
-//const Outlet1TxSensorFault = 28
-//const InvalidSerialNumber = 29
-//const Dcdc1CurrentWhenDisabled = 30
-//const Dcdc1OverCurrent = 31
-//
-///**
-//Fault Flag B bit field definitions
-//*/
-//
-//const AmbientOverTemperature = 0
-//const Sib1CommsFault = 1
-//const BoardTxSensorFault = 2
-//const Sib2CommsFault = 3
-//const LowLeakTestPressure = 4
-//const Sib3CommsFault = 5
-//const LouverOpenFault = 6
-//const StateDependentUnexpectedCurrent1 = 7
-//const EngineeringFault = 8
-//const LowPurgeModifierIndicator = 9
-//const Dcdc2CurrentWhenDisabled = 10
-//const Dcdc3CurrentWhenDisabled = 11
-//const Dcdc2OverCurrent = 12
-//const ReadConfigFault = 13
-//const CorruptConfigFault = 14
-//const ConfigValueRangeFault = 15
-//const Stack1VoltageMismatch = 16
-//const Dcdc3OverCurrent = 17
-//const UnexpectedPurgeInhibit = 18
-//const FuelOnNoVolts = 19
-//const LeakDetected = 20
-//const AirCheckFault = 21
-//const AirCheckFaultShadow = 22
-//const DenyStartUV = 23
-//const StateDependentUnexpectedCurrent2 = 24
-//const StateDependentUnexpectedCurrent3 = 25
-//const Stack2UnderVoltage = 26
-//const Stack3UnderVoltage = 27
-//const Stack2OverVoltage = 28
-//const Stack3OverVoltage = 29
-//const Stack2OverCurrent = 30
-//const Stack3OverCurrent = 31
-//
-///**
-//Fault Flag C bit field definitions
-//*/
-//
-//const Stack2VoltageMismatch = 0
-//const Stack3VoltageMismatch = 1
-//const Outlet2OverTemperature = 2
-//const Outlet3OverTemperature = 3
-//const Inlet2OverTemperature = 4
-//const Inlet3OverTemperature = 5
-//const Inlet2TxSensorFault = 6
-//const Inlet3TxSensorFault = 7
-//const Outlet2TxSensorFault = 8
-//const Outlet3TxSensorFault = 9
-//const FuelOn1LowMeanVoltage = 10
-//const FuelOn2LowMeanVoltage = 11
-//const FuelOn3LowMeanVoltage = 12
-//const FuelOn1LowMinVoltage = 13
-//const FuelOn2LowMinVoltage = 14
-//const FuelOn3LowMinVoltage = 15
-//const SoftwareTripShutdown = 16
-//const SoftwareTripFault = 17
-//const TurnAroundTimeWarning = 18
-//const PurgeCheckShutdown = 19
-//const OutputUnderVoltage = 20
-//const OutputOverVoltage = 21
-//const SafetyObserverVoltRailTrip = 22
-//const SafetyObserverDiffPressureTrip = 23
-//const PurgeMissedOnePxOpen = 24
-//const PurgeMissedOnePxClose = 25
-//const PurgeMissedOneIxOpen = 26
-//const PurgeMissedOneIxSolSaver = 27
-//const PurgeMissedOneIxClose = 28
-//const InRangeFaultPx01 = 29
-//const NoisyInputPx01 = 30
-//const NoisyInputTx68 = 31
-//
-///**
-//Fault Flag D bit field definitions
-//*/
-//
-//const NoisyInputDiffP = 0
-//const ValveClosedPxRising = 1
-//const DiffPSensorFault = 2
-//const LossOfVentilation = 3
-//const DiffPSensorHigh = 4
-//const FanOverrun = 5
-//const BlockedAirFlow = 6
-//const WarningNoisyInputPx01 = 7
-//const WarningNoisyInputTx68 = 8
-//const WarningNoisyInputDiffP = 9
-//const Dcdc1OutputFault = 10
-//const EmergencyPurge = 11
-//const EmergencyPurgeWarningA = 12
-//const EmergencyPurgeWarningB = 13
-//const EmergencyPurgeFault = 14
-//const CalcCoreTxSensorFault = 15
-//const CalcCoreOverTemperature = 16
-//const LouverFailedToOpen = 17
-//const LouverFailedToClose = 18
-//const Dcdc2OutputFault = 19
-//const Dcdc3OutputFault = 20
-//const SidebySideTargetVoltagesShutdown = 21
-//const SideBySideCanMessageFault = 22
-//const SideBySideCanMessageIndicator = 23
-//const AdcMonitorFault = 24
-//const TachoIrqCounterFault = 25
-//const TurnAroundTimeFault = 26
-//
-//// const - = 27 Not Used
-//
-//const Dcdc1ControlCheckFault = 28
-//const Dcdc2ControlCheckFault = 29
-//const Dcdc3ControlCheckFault = 30
-//const I2c2DacsFault = 31
-//
-//// Bit mask to exclude Indicator fault flags
-//// bit 42
-//const IndicatorFaultA = ^uint32(0)
-//const excludeIndicatorFaultA = ^IndicatorFaultA
-//
-//const IndicatorFaultB = ^uint32(1 << LowPurgeModifierIndicator)
-//const excludeIndicatorFaultB = ^IndicatorFaultB
-//
-//// bit 82, 83, 89, 90, 91, 92, 93, 104, 105, 106, 115, 120
-//const IndicatorFaultC = ^uint32((1 << SoftwareTripFault) |
-//	(1 << TurnAroundTimeWarning) |
-//	(1 << PurgeMissedOnePxOpen) |
-//	(1 << PurgeMissedOnePxClose) |
-//	(1 << PurgeMissedOneIxOpen) |
-//	(1 << PurgeMissedOneIxSolSaver) |
-//	(1 << PurgeMissedOneIxClose))
-//const excludeIndicatorFaultC = ^IndicatorFaultC
-//
-//const IndicatorFaultD = ^uint32((1 << WarningNoisyInputPx01) |
-//	(1 << WarningNoisyInputTx68) |
-//	(1 << WarningNoisyInputDiffP) |
-//	(1 << LouverFailedToClose) |
-//	(1 << SideBySideCanMessageIndicator))
-//const excludeIndicatorFaultD = ^IndicatorFaultD
-//
-//const ControlledFaultA = uint32(0)
-//const excludeControlledFaultA = ^ControlledFaultA
-//
-//const ControlledFaultB = ^uint32(1 << DenyStartUV)
-//const excludeControlledFaultB = ^ControlledFaultB
-//
-//const ControlledFaultC = ^uint32(0)
-//const excludeControlledFaultC = ^ControlledFaultC
-//
-//const ControlledFaultD = uint32((1 << EmergencyPurge) |
-//	(1 << EmergencyPurgeWarningA) |
-//	(1 << EmergencyPurgeWarningB) |
-//	(1 << EmergencyPurgeFault))
-//const excludeControlledFaultD = ^ControlledFaultD
-//
-//const ShutdownFaultA = uint32((1 << AnodeUnderPressure) |
-//	(1 << Stack1OverVoltage) |
-//	(1 << Stack1MinCellUndervoltage) |
-//	(1 << Stack1UnderVoltage) |
-//	(1 << Stack1OverVoltage) |
-//	(1 << Stack2MinCellUndervoltage) |
-//	(1 << Stack3MinCellUndervoltage) |
-//	(1 << Fan2NoTacho) |
-//	(1 << Fan1NoTacho) |
-//	(1 << Fan3NoTacho) |
-//	(1 << Fan3ErrantSpeed) |
-//	(1 << Fan2ErrantSpeed) |
-//	(1 << Fan1ErrantSpeed) |
-//	(1 << Sib1Fault) |
-//	(1 << Sib2Fault) |
-//	(1 << Sib3Fault) |
-//	(1 << Inlet1TxSensorFault) |
-//	(1 << Outlet1TxSensorFault) |
-//	(1 << InvalidSerialNumber) |
-//	(1 << Dcdc1CurrentWhenDisabled) |
-//	(1 << Dcdc1OverCurrent))
-//const excludeShutdownFaultA = ^ShutdownFaultA
-//
-//const ShutdownFaultB = uint32((1 << AmbientOverTemperature) |
-//	(1 << Sib1CommsFault) |
-//	(1 << BoardTxSensorFault) |
-//	(1 << Sib2CommsFault) |
-//	(1 << LowLeakTestPressure) |
-//	(1 << Sib3CommsFault) |
-//	(1 << LouverOpenFault) |
-//	(1 << EngineeringFault) |
-//	(1 << Dcdc2CurrentWhenDisabled) |
-//	(1 << Dcdc3CurrentWhenDisabled) |
-//	(1 << Dcdc2OverCurrent) |
-//	(1 << ReadConfigFault) |
-//	(1 << CorruptConfigFault) |
-//	(1 << ConfigValueRangeFault) |
-//	(1 << Stack1VoltageMismatch) |
-//	(1 << Dcdc3OverCurrent) |
-//	(1 << UnexpectedPurgeInhibit) |
-//	(1 << FuelOnNoVolts) |
-//	(1 << Stack2UnderVoltage) |
-//	(1 << Stack3UnderVoltage))
-//const excludeShutdownFaultB = ^ShutdownFaultB
-//
-//// bit 82, 83, 89, 90, 91, 92, 93, 104, 105, 106, 115, 120
-//const ShutdownFaultC = uint32((1 << Stack2VoltageMismatch) |
-//	(1 << Stack3VoltageMismatch) |
-//	(1 << Inlet2TxSensorFault) |
-//	(1 << Inlet3TxSensorFault) |
-//	(1 << Outlet2TxSensorFault) |
-//	(1 << Outlet3TxSensorFault) |
-//	(1 << FuelOn1LowMeanVoltage) |
-//	(1 << FuelOn2LowMeanVoltage) |
-//	(1 << FuelOn3LowMeanVoltage) |
-//	(1 << FuelOn1LowMinVoltage) |
-//	(1 << FuelOn2LowMinVoltage) |
-//	(1 << FuelOn3LowMinVoltage) |
-//	(1 << SoftwareTripShutdown) |
-//	(1 << PurgeCheckShutdown) |
-//	(1 << OutputUnderVoltage))
-//const excludeShutdownFaultC = ^ShutdownFaultC
-//
-//const ShutdownFaultD = uint32((1 << Dcdc1OutputFault) |
-//	(1 << CalcCoreTxSensorFault) |
-//	(1 << LouverFailedToOpen) |
-//	(1 << Dcdc2OutputFault) |
-//	(1 << Dcdc3OutputFault) |
-//	(1 << SidebySideTargetVoltagesShutdown) |
-//	(1 << SideBySideCanMessageIndicator) |
-//	(1 << AdcMonitorFault) |
-//	(1 << TachoIrqCounterFault) |
-//	(1 << TurnAroundTimeFault) |
-//	(1 << Dcdc1ControlCheckFault) |
-//	(1 << Dcdc2ControlCheckFault) |
-//	(1 << Dcdc3ControlCheckFault) |
-//	(1 << I2c2DacsFault))
-//const excludeShutdownFaultD = ^ShutdownFaultD
-//
-//const CriticalFaultA = ^(IndicatorFaultA | ControlledFaultA | ShutdownFaultA)
-//const CriticalFaultB = ^(IndicatorFaultB | ControlledFaultB | ShutdownFaultB)
-//const CriticalFaultC = ^(IndicatorFaultC | ControlledFaultC | ShutdownFaultC)
-//const CriticalFaultD = ^(IndicatorFaultD | ControlledFaultD | ShutdownFaultD)
-//
+//Status bit field definitions for the database
+const STATEON = 0b10000000
+const STATERUN = 0b00000001
+const STATESTANDBY = 0b00000010
+const STATEINACTIVE = 0b00000100
+const STATEFAULT = 0b00001000
 
 type FaultLevel int // Possible fault levels for the FCM804
 
@@ -318,7 +49,7 @@ func (f FaultLevel) String() string {
 
 type FCM804 struct {
 	bus         *CANBus
-	device      uint16
+	device      uint8
 	runState    bool      // Used to record the run state when restarting
 	LastUpdate  time.Time // Serves as a heart beat
 	FaultTime   time.Time // Time of the last fault on this cell
@@ -336,15 +67,15 @@ type FCM804 struct {
 	FaultA              uint32   // 0x328 byte 0..3
 	FaultB              uint32   // 0x328 byte 4..7
 	OutputPower         int16    // 0x338 byte 0..1 - Watts
-	OutputVolts         float32  // 0x338 byte 2..3 - Volts * 0.01
-	OutputCurrent       float32  // 0x338 byte 4..5 - Amps * 0.01
-	AnodePressure       float32  // 0x338 byte 6..7 - mBar * 0.1
-	OutletTemp          float32  // 0x348 byte 0..1 - C * 0.01
-	InletTemp           float32  // 0x348 byte 2..3 - C * 0.01
-	DCDCvoltageSetpoint float32  // 0x348 byte 4..5 - V * 0.01
-	DCDCcurrentlimit    float32  // 0x348 byte 6..7 - A * 0.01
-	LouverPosition      float32  // 0x358 byte 0..1 - %Open * 0.01
-	FanSPduty           float32  // 0x358 byte 2..3 - % * 0.01
+	OutputVolts         uint16   // 0x338 byte 2..3 - Volts * 0.01
+	OutputCurrent       int16    // 0x338 byte 4..5 - Amps * 0.01
+	AnodePressure       uint16   // 0x338 byte 6..7 - mBar * 0.1
+	OutletTemp          int16    // 0x348 byte 0..1 - C * 0.01
+	InletTemp           int16    // 0x348 byte 2..3 - C * 0.01
+	DCDCvoltageSetpoint uint16   // 0x348 byte 4..5 - V * 0.01
+	DCDCcurrentlimit    uint16   // 0x348 byte 6..7 - A * 0.01
+	LouverPosition      uint16   // 0x358 byte 0..1 - %Open * 0.01
+	FanSPduty           uint16   // 0x358 byte 2..3 - % * 0.01
 	StateInformation    struct { // 0x368 byte 0
 		Inactive bool // bit7
 		Run      bool // bit6
@@ -372,7 +103,7 @@ type FCM804 struct {
 	mu sync.Mutex
 }
 
-func NewFCM804(bus *CANBus, device uint16) *FCM804 {
+func NewFCM804(bus *CANBus, device uint8) *FCM804 {
 	fcm := new(FCM804)
 	fcm.device = device
 	fcm.bus = bus
@@ -475,66 +206,141 @@ func (fcm *FCM804) getRunEnergy() uint64 {
 	defer fcm.mu.Unlock()
 	return fcm.RunEnergy
 }
+
+/***
+getFaultA returns the fault code A flags
+*/
 func (fcm *FCM804) getFaultA() uint32 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.FaultA
 }
+
+/***
+getFaultB returns the fault code B flags
+*/
 func (fcm *FCM804) getFaultB() uint32 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.FaultB
 }
+
+/***
+getOutputPower returns the poutput power in Watts
+*/
 func (fcm *FCM804) getOutputPower() int16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.OutputPower
 }
+
+/***
+getOutputVolts returns the output volts
+*/
 func (fcm *FCM804) getOutputVolts() float32 {
+	return float32(fcm.getOutputVoltsRaw()) / 100
+}
+func (fcm *FCM804) getOutputVoltsRaw() uint16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.OutputVolts
 }
+
+/***
+OutputCurrent returns the output current in amps
+*/
 func (fcm *FCM804) getOutputCurrent() float32 {
+	return float32(fcm.getOutputCurrentRaw()) / 100
+}
+func (fcm *FCM804) getOutputCurrentRaw() int16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.OutputCurrent
 }
+
+/***
+getAnodePressure returns the anode pressure in Bar
+*/
 func (fcm *FCM804) getAnodePressure() float32 {
+	return float32(fcm.getAnodePressureRaw()) / 10000
+}
+func (fcm *FCM804) getAnodePressureRaw() uint16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.AnodePressure
 }
+
+/***
+getOutletTemp returns the outlet temperature in Celcius
+*/
 func (fcm *FCM804) getOutletTemp() float32 {
+	return float32(fcm.getOutletTempRaw()) / 100
+}
+func (fcm *FCM804) getOutletTempRaw() int16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.OutletTemp
 }
+
+/***
+getInletTemp returns the inlet temperature in Celcius
+*/
 func (fcm *FCM804) getInletTemp() float32 {
+	return float32(fcm.getInletTempRaw()) / 100
+}
+func (fcm *FCM804) getInletTempRaw() int16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.InletTemp
 }
+
+/***
+getDCDCvoltageSetpoint returns the DC voltage setpoint in volts
+*/
 func (fcm *FCM804) getDCDCvoltageSetpoint() float32 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
-	return fcm.DCDCvoltageSetpoint
+	return float32(fcm.DCDCvoltageSetpoint) / 100
 }
+
+/***
+getDCDCcurrentlimit returns the DC current limit in amps
+*/
 func (fcm *FCM804) getDCDCcurrentlimit() float32 {
+	return float32(fcm.getDCDCcurrentlimit()) / 100
+}
+func (fcm *FCM804) getDCDCcurrentlimitRaw() uint16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.DCDCcurrentlimit
 }
+
+/***
+getLouverPosition returns the percentage open position of the louver
+*/
 func (fcm *FCM804) getLouverPosition() float32 {
+	return float32(fcm.getLouverPositionRaw()) / 100
+}
+
+func (fcm *FCM804) getLouverPositionRaw() uint16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.LouverPosition
 }
+
+/***
+getFanSPduty returns the duty cycle for the fan
+*/
 func (fcm *FCM804) getFanSPduty() float32 {
+	return float32(fcm.getFanSPdutyRaw()) / 100
+}
+
+func (fcm *FCM804) getFanSPdutyRaw() uint16 {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	return fcm.FanSPduty
 }
+
 func (fcm *FCM804) getInactive() bool {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
@@ -678,9 +484,9 @@ func (fcm *FCM804) Frame338(frame []byte) {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
 	fcm.OutputPower = int16(binary.BigEndian.Uint16(frame[0:2]))
-	fcm.OutputVolts = float32(int16(binary.BigEndian.Uint16(frame[2:4]))) / 100.0
-	fcm.OutputCurrent = float32(int16(binary.BigEndian.Uint16(frame[4:6]))) / 100.0
-	fcm.AnodePressure = float32(binary.BigEndian.Uint16(frame[6:8])) / 10.0
+	fcm.OutputVolts = binary.BigEndian.Uint16(frame[2:4])
+	fcm.OutputCurrent = int16(binary.BigEndian.Uint16(frame[4:6]))
+	fcm.AnodePressure = binary.BigEndian.Uint16(frame[6:8])
 	fcm.LastUpdate = time.Now()
 }
 
@@ -688,10 +494,10 @@ func (fcm *FCM804) Frame338(frame []byte) {
 func (fcm *FCM804) Frame348(frame []byte) {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
-	fcm.OutletTemp = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
-	fcm.InletTemp = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
-	fcm.DCDCvoltageSetpoint = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
-	fcm.DCDCcurrentlimit = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
+	fcm.OutletTemp = int16(binary.BigEndian.Uint16(frame[0:2]))
+	fcm.InletTemp = int16(binary.BigEndian.Uint16(frame[2:8]))
+	fcm.DCDCvoltageSetpoint = binary.BigEndian.Uint16(frame[4:6])
+	fcm.DCDCcurrentlimit = binary.BigEndian.Uint16(frame[6:8])
 	fcm.LastUpdate = time.Now()
 }
 
@@ -699,8 +505,8 @@ func (fcm *FCM804) Frame348(frame []byte) {
 func (fcm *FCM804) Frame358(frame []byte) {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
-	fcm.LouverPosition = float32(int16(binary.BigEndian.Uint16(frame[0:2]))) / 100.0
-	fcm.FanSPduty = float32(int16(binary.BigEndian.Uint16(frame[2:4]))) / 100.0
+	fcm.LouverPosition = binary.BigEndian.Uint16(frame[0:2])
+	fcm.FanSPduty = binary.BigEndian.Uint16(frame[2:4])
 	fcm.LastUpdate = time.Now()
 }
 
@@ -785,6 +591,30 @@ func (fcm *FCM804) IsSwitchedOn() bool {
 	return time.Now().Sub(fcm.LastUpdate) < (time.Millisecond * 500)
 }
 
+//GetStateCode return a bit mask describing the state of the fuel cell
+func (fcm *FCM804) GetStateCode() (state byte) {
+	if !fcm.IsSwitchedOn() {
+		state = 0
+	} else {
+		state = STATEON
+		fcm.mu.Lock()
+		defer fcm.mu.Unlock()
+		if fcm.StateInformation.Run {
+			state = state | STATERUN
+		}
+		if fcm.StateInformation.Standby {
+			state = state | STATESTANDBY
+		}
+		if fcm.StateInformation.Fault {
+			state = state | STATEFAULT
+		}
+		if fcm.StateInformation.Inactive {
+			state = state | STATEINACTIVE
+		}
+	}
+	return
+}
+
 //GetState return a string describing the state of the fuel cell
 func (fcm *FCM804) GetState() (state string) {
 	if !fcm.IsSwitchedOn() {
@@ -829,46 +659,46 @@ Returns a JSSON object containing all the current fuel cell errors decoded.
 */
 func getFuelCellErrors(w http.ResponseWriter, _ *http.Request) {
 	sSQL := `select date_format(l1.logged, "%Y-%m-%d %H:%i:%s") as logged
-     , ifnull(Decodefault('A', l1.fc1FaultFlagA), "") as fc0faultA
-     , ifnull(DecodeFault('B', l1.fc1FaultFlagB), "") as fc0faultB
-     , ifnull(DecodeFault('C', l1.fc1FaultFlagC), "") as fc0faultC
-     , ifnull(DecodeFault('D', l1.fc1FaultFlagD), "") as fc0faultD
-     , ifnull(Decodefault('A', l1.fc2FaultFlagA), "") as fc1faultA
-     , ifnull(DecodeFault('B', l1.fc2FaultFlagB), "") as fc1faultB
-     , ifnull(DecodeFault('C', l1.fc2FaultFlagC), "") as fc1faultC
-     , ifnull(DecodeFault('D', l1.fc2FaultFlagD), "") as fc1faultD
+     , ifnull(Decodefault('A', l1.fc0FaultFlagA), "") as fc0faultA
+     , ifnull(DecodeFault('B', l1.fc0FaultFlagB), "") as fc0faultB
+     , ifnull(DecodeFault('C', l1.fc0FaultFlagC), "") as fc0faultC
+     , ifnull(DecodeFault('D', l1.fc0FaultFlagD), "") as fc0faultD
+     , ifnull(Decodefault('A', l1.fc1FaultFlagA), "") as fc1faultA
+     , ifnull(DecodeFault('B', l1.fc1FaultFlagB), "") as fc1faultB
+     , ifnull(DecodeFault('C', l1.fc1FaultFlagC), "") as fc1faultC
+     , ifnull(DecodeFault('D', l1.fc1FaultFlagD), "") as fc1faultD
   from logging l1
   join logging l2 on l1.id = l2.id - 1
     and l1.logged > date_add(now(), interval -1 day)
     and l2.logged  > date_add(now(), interval -1 day)
-	and ifnull(l1.fc1FaultFlagA, 0)
+	and ifnull(l1.fc0FaultFlagA, 0)
+	  | ifnull(l1.fc0FaultFlagB, 0)
+	  | ifnull(l1.fc0FaultFlagC, 0)
+	  | ifnull(l1.fc0FaultFlagD, 0)
+	  | ifnull(l1.fc1FaultFlagA, 0)
 	  | ifnull(l1.fc1FaultFlagB, 0)
 	  | ifnull(l1.fc1FaultFlagC, 0)
-	  | ifnull(l1.fc1FaultFlagD, 0)
-	  | ifnull(l1.fc2FaultFlagA, 0)
-	  | ifnull(l1.fc2FaultFlagB, 0)
-	  | ifnull(l1.fc2FaultFlagC, 0)
-	  | ifnull(l1.fc2FaultFlagD, 0) <> 0
-	and (ifnull(l1.fc1FaultFlagA, 0) ^ ifnull(l2.fc1FaultFlagA, 0)) |
+	  | ifnull(l1.fc1FaultFlagD, 0) <> 0
+	and (ifnull(l1.fc0FaultFlagA, 0) ^ ifnull(l2.fc0FaultFlagA, 0)) |
+	    (ifnull(l1.fc0FaultFlagB, 0) ^ ifnull(l2.fc0FaultFlagB, 0)) |
+	    (ifnull(l1.fc0FaultFlagC, 0) ^ ifnull(l2.fc0FaultFlagC, 0)) |
+	    (ifnull(l1.fc0FaultFlagD, 0) ^ ifnull(l2.fc0FaultFlagD, 0)) |
+	    (ifnull(l1.fc1FaultFlagA, 0) ^ ifnull(l2.fc1FaultFlagA, 0)) |
 	    (ifnull(l1.fc1FaultFlagB, 0) ^ ifnull(l2.fc1FaultFlagB, 0)) |
 	    (ifnull(l1.fc1FaultFlagC, 0) ^ ifnull(l2.fc1FaultFlagC, 0)) |
-	    (ifnull(l1.fc1FaultFlagD, 0) ^ ifnull(l2.fc1FaultFlagD, 0)) |
-	    (ifnull(l1.fc2FaultFlagA, 0) ^ ifnull(l2.fc2FaultFlagA, 0)) |
-	    (ifnull(l1.fc2FaultFlagB, 0) ^ ifnull(l2.fc2FaultFlagB, 0)) |
-	    (ifnull(l1.fc2FaultFlagC, 0) ^ ifnull(l2.fc2FaultFlagC, 0)) |
-	    (ifnull(l1.fc2FaultFlagD, 0) ^ ifnull(l2.fc2FaultFlagD, 0)) > 0
+	    (ifnull(l1.fc1FaultFlagD, 0) ^ ifnull(l2.fc1FaultFlagD, 0)) > 0
 	order by logged desc`
 
 	type Row struct {
 		Logged    string `json:"logged"`
-		FC1FaultA string `json:"fc0FaultA"`
-		FC1FaultB string `json:"fc0FaultB"`
-		FC1FaultC string `json:"fc0FaultC"`
-		FC1FaultD string `json:"fc0FaultD"`
-		FC2FaultA string `json:"fc1FaultA"`
-		FC2FaultB string `json:"fc1FaultB"`
-		FC2FaultC string `json:"fc1FaultC"`
-		FC2FaultD string `json:"fc1FaultD"`
+		FC0FaultA string `json:"fc0FaultA"`
+		FC0FaultB string `json:"fc0FaultB"`
+		FC0FaultC string `json:"fc0FaultC"`
+		FC0FaultD string `json:"fc0FaultD"`
+		FC1FaultA string `json:"fc1FaultA"`
+		FC1FaultB string `json:"fc1FaultB"`
+		FC1FaultC string `json:"fc1FaultC"`
+		FC1FaultD string `json:"fc1FaultD"`
 	}
 
 	var results []*Row
@@ -887,8 +717,8 @@ func getFuelCellErrors(w http.ResponseWriter, _ *http.Request) {
 	}()
 	for rows.Next() {
 		row := new(Row)
-		if err := rows.Scan(&(row.Logged), &(row.FC1FaultA), &(row.FC1FaultB), &(row.FC1FaultC), &(row.FC1FaultD),
-			&(row.FC2FaultA), &(row.FC2FaultB), &(row.FC2FaultC), &(row.FC2FaultD)); err != nil {
+		if err := rows.Scan(&(row.Logged), &(row.FC0FaultA), &(row.FC0FaultB), &(row.FC0FaultC), &(row.FC0FaultD),
+			&(row.FC1FaultA), &(row.FC1FaultB), &(row.FC1FaultC), &(row.FC1FaultD)); err != nil {
 			log.Print(err)
 		} else {
 			results = append(results, row)
@@ -905,6 +735,7 @@ func getFuelCellErrors(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+/*
 func getFuelCellDetail(w http.ResponseWriter, r *http.Request) {
 	type Row struct {
 		Logged        string
@@ -933,9 +764,9 @@ func getFuelCellDetail(w http.ResponseWriter, r *http.Request) {
 	from := vars["from"]
 	device := vars["device"]
 	switch device {
-	case "1":
+	case "0":
 		cell = 0
-	case "2":
+	case "1":
 		cell = 1
 	default:
 		err := fmt.Errorf("invalid device - %s", device)
@@ -984,14 +815,15 @@ where logged > ?
 		}
 	}
 }
+*/
 
 func (fcm *FCM804) restartTheFuelCell() {
 	if fcm.runState {
-		if err := startFuelCell(int64(fcm.device)); err != nil {
+		if err := startFuelCell(fcm.device); err != nil {
 			log.Println(err)
 		}
 	} else {
-		if err := turnOnFuelCell(int64(fcm.device)); err != nil {
+		if err := turnOnFuelCell(fcm.device); err != nil {
 			log.Println(err)
 		}
 	}
@@ -1025,12 +857,12 @@ func (fcm *FCM804) checkFuelCell() {
 					fcm.InRestart = true
 					fcm.NumRestarts++
 					if fcm.device == 0 {
-						fcm.runState = SystemStatus.Relays.FuelCell1Run
+						fcm.runState = SystemStatus.Relays.FC0Run
 					} else {
-						fcm.runState = SystemStatus.Relays.FuelCell2Run
+						fcm.runState = SystemStatus.Relays.FC1Run
 					}
 					go func() {
-						if err := turnOffFuelCell(int64(fcm.device)); err != nil {
+						if err := turnOffFuelCell(fcm.device); err != nil {
 							log.Println(err)
 						}
 					}()

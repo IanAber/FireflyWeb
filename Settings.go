@@ -7,72 +7,38 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
-type Settings struct {
-	values map[string]string
-}
-
-func (s *Settings) ReadSettings(filepath string) error {
-	s.values = make(map[string]string)
-	file, err := ioutil.ReadFile(filepath)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(string(file), "\n")
-	for _, line := range lines {
-		if len(line) > 0 && line[0] != '#' {
-			parts := strings.Split(line, "=")
-			if len(parts) < 2 {
-				parts = strings.Split(line, " ")
-			}
-			if len(parts) < 2 {
-				log.Println("Can't split key and value in ", line)
-			} else {
-				s.values[strings.Trim(parts[0], " \t")] = strings.Trim(parts[1], " \t")
-			}
-		}
-	}
-	return nil
-}
-
-func (s *Settings) GetInt8Setting(key string) (uint8, error) {
-	val, exists := s.values[key]
-	if !exists {
-		return 0, fmt.Errorf("%s not found in the settings file.", key)
-	}
-	iVal, err := strconv.ParseInt(val, 10, 8)
-	if err != nil {
-		return 0, err
-	}
-	return uint8(iVal), nil
-}
-
-func (s *Settings) GetList(key string) ([]string, error) {
-	val, exists := s.values[key]
-	if !exists {
-		return nil, fmt.Errorf("%s not found in the settings file.", key)
-	}
-	return strings.Split(val, ",;"), nil
+type ElectrolyserConfig struct {
+	ID     uint8  `json:"id"`
+	IP     string `json:"ipaddress"`
+	Serial string `json:"serial"`
 }
 
 type JsonSettings struct {
-	ElectrolyserHoldOffTime          time.Duration `json:"electrolyserHoldOffTime"`
-	ElectrolyserHoldOnTime           time.Duration `json:"electrolyserHoldOnTime"`
-	ElectrolyserOffDelay             time.Duration `json:"electrolyserOffDelay"`
-	ElectrolyserShutDownDelay        time.Duration `json:"electrolyserShutDownDelay"`
-	ElectrolyserMaxStackVoltsTurnOff int           `json:"electrolyserMaxStackVoltsForShutdown"`
-	FuelCellMaintenance              bool          `json:"fuelCellMaintenance"`
-	FuelCellMaxRestarts              int           `json:"fuelCellMaxRestarts"`
-	FuelCellRestartOffTime           time.Duration `json:"fuelCellRestartOffTime"`
-	FuelCellEnableToRunDelay         time.Duration `json:"fuelCellEnableToRunDelay"`
-	FuelCellLogOnRun                 bool          `json:"fuelCellLogOnRun"`
-	FuelCellLogOnEnable              bool          `json:"fuelCellLogOnEnable"`
-	GasOnDelay                       time.Duration `json:"gasOnDelay"`
-	GasOffDelay                      time.Duration `json:"gasOffDelay"`
-	DebugOutput                      bool          `json:"debugOutputEnable"`
+	clearElectrolyserIPs             bool
+	Electrolysers                    []*ElectrolyserConfig `json:"electrolysers"`
+	ElectrolyserHoldOffTime          time.Duration         `json:"electrolyserHoldOffTime"`
+	ElectrolyserHoldOnTime           time.Duration         `json:"electrolyserHoldOnTime"`
+	ElectrolyserOffDelay             time.Duration         `json:"electrolyserOffDelay"`
+	ElectrolyserShutDownDelay        time.Duration         `json:"electrolyserShutDownDelay"`
+	ElectrolyserMaxStackVoltsTurnOff int                   `json:"electrolyserMaxStackVoltsForShutdown"`
+	FuelCellMaintenance              bool                  `json:"fuelCellMaintenance"`
+	FuelCellMaxRestarts              int                   `json:"fuelCellMaxRestarts"`
+	FuelCellRestartOffTime           time.Duration         `json:"fuelCellRestartOffTime"`
+	FuelCellEnableToRunDelay         time.Duration         `json:"fuelCellEnableToRunDelay"`
+	FuelCellLogOnRun                 bool                  `json:"fuelCellLogOnRun"`
+	FuelCellLogOnEnable              bool                  `json:"fuelCellLogOnEnable"`
+	GasOnDelay                       time.Duration         `json:"gasOnDelay"`
+	GasOffDelay                      time.Duration         `json:"gasOffDelay"`
+	DebugOutput                      bool                  `json:"debugOutputEnable"`
+	TankMultiplier                   float64               `json:"tankMultiplier"`
+	TankOffset                       float64               `json:"tankOffset"`
+	WaterMultiplier                  int                   `json:"waterMultiplier"`
+	WaterOffset                      int                   `json:"waterOffset"`
+	GasMultiplier                    int                   `json:"gasMultiplier"`
+	GasOffset                        int                   `json:"gasOffset"`
 	filepath                         string
 }
 
@@ -93,13 +59,33 @@ func NewJsonSettings() *JsonSettings {
 	s.FuelCellLogOnEnable = false
 	s.GasOnDelay = GASONDELAY
 	s.DebugOutput = true
+	s.TankMultiplier = 0.06685 // 0.035
+	s.TankOffset = -8.465
+	s.GasMultiplier = 1
+	s.GasOffset = 0
+	s.WaterMultiplier = 10
+	s.WaterOffset = 0
 	return s
+}
+
+func (s *JsonSettings) ConvertTankPressure(rawPressure uint16) float64 {
+	return (float64(rawPressure) * s.TankMultiplier) + s.TankOffset
+}
+
+func (s *JsonSettings) ConvertFuelCellPressure(rawPressure uint16) float32 {
+	return (float32(rawPressure-uint16(s.GasOffset)) * (float32(s.GasMultiplier) / 100))
+}
+
+func (s *JsonSettings) ConvertWaterConductivity(rawConductivity uint16) float32 {
+	return (float32(rawConductivity-uint16(s.WaterOffset)) * (float32(s.WaterMultiplier) / 100))
 }
 
 func (s *JsonSettings) ReadSettings(filepath string) error {
 	s.filepath = filepath
 	if file, err := ioutil.ReadFile(filepath); err != nil {
-		return err
+		if err := s.WriteSettings(); err != nil {
+			return err
+		}
 	} else {
 		if err := json.Unmarshal(file, s); err != nil {
 			return err
@@ -219,8 +205,8 @@ func getSettings(w http.ResponseWriter, _ *http.Request) {
 	printOptions(w, int(params.ElectrolyserHoldOnTime.Minutes()), 1, 30, "minutes", "elholdon", "Electrolyser hold on time")
 	printOptions(w, int(params.ElectrolyserOffDelay.Minutes()), 1, 30, "minutes", "eldelayoff", "Electrolyser off delay time")
 	printOptions(w, int(params.ElectrolyserShutDownDelay.Minutes()), 1, 30, "minutes", "elshutdowndelay", "Electrolyser shut down delay time")
-	printOptions(w, int(params.ElectrolyserMaxStackVoltsTurnOff), 25, 45, "Volts", "electrolyserMaxStackVoltsForShutdown", "Maximum stack voltage for electrolyser to be turned off")
-	printOptions(w, int(params.FuelCellMaxRestarts), 1, 25, "", "fcmaxrestarts", "Fuel Cell Maximumn Resatrts")
+	printOptions(w, params.ElectrolyserMaxStackVoltsTurnOff, 25, 45, "Volts", "electrolyserMaxStackVoltsForShutdown", "Maximum stack voltage for electrolyser to be turned off")
+	printOptions(w, params.FuelCellMaxRestarts, 1, 25, "", "fcmaxrestarts", "Fuel Cell Maximumn Restarts")
 	printOptions(w, int(params.FuelCellRestartOffTime.Seconds()), 0, 120, "seconds", "fcrestarttime", "Fuel Cell off time when restarting")
 	printOptions(w, int(params.FuelCellEnableToRunDelay.Seconds()), 0, 30, "seconds", "fcenabletorun", "Fuel Cell delay between on and run")
 	printOptions(w, int(params.GasOnDelay.Seconds()), 0, 120, "seconds", "gasondelay", "Delay after turning gas on before run")
@@ -229,6 +215,12 @@ func getSettings(w http.ResponseWriter, _ *http.Request) {
 	printSwitch(w, params.FuelCellLogOnRun, "logonrun", "Generate fuel cell log when running")
 	printSwitch(w, params.FuelCellLogOnEnable, "logonenable", "Generate fuel cell log when enabled")
 	printSwitch(w, params.FuelCellMaintenance, "fcmaintenance", "Set fuel cell to maintenance mode")
+	printSwitch(w, params.clearElectrolyserIPs, "clearelips", "Clear the electrolyser IP addresses and cause a search on reboot")
+	printOptions(w, 10, 1, 60, "", "tankDays", "Days to scan for tank constant calculation")
+	printOptions(w, params.GasOffset, 0, 100, "", "gasOffset", "Offset for the fuel cell pressure sensor")
+	printOptions(w, params.GasMultiplier, 1, 1000, "", "gasMultiplier", "Multiplier (100 = x1) for the fuel cell pressure sensor")
+	printOptions(w, params.WaterOffset, -20, 20, "", "waterOffset", "Offset for the water conductivity sensor")
+	printOptions(w, params.WaterMultiplier, 1, 500, "", "waterMultiplier", "Multiplier (100 = x1) for the water conductivity sensor")
 	if _, err := fmt.Fprint(w, `<br /><button class="egButton" type="submit" >Update Settings</button></form><a href="/">Main Menu</a></body></html>`); err != nil {
 		log.Println(err)
 	}
@@ -259,6 +251,15 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 	logOnRun := r.Form.Get("logonrun")
 	logOnEnable := r.Form.Get("logonenable")
 	maintenance := r.Form.Get("fcmaintenance")
+	clearElIps := r.Form.Get("clearelips")
+	//	tankOffset := r.Form.Get("tankOffset")
+	//	tankMultiplier := r.Form.Get("tankMultiplier")
+	gasOffset := r.Form.Get("gasOffset")
+	gasMultiplier := r.Form.Get("gasMultiplier")
+	waterOffset := r.Form.Get("waterOffset")
+	waterMultiplier := r.Form.Get("waterMultiplier")
+
+	tankDays := r.Form.Get("tankDays")
 
 	if len(holdoffTime) > 0 {
 		t, err := strconv.Atoi(holdoffTime)
@@ -332,6 +333,53 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 			params.GasOffDelay = time.Second * time.Duration(t)
 		}
 	}
+	if len(gasMultiplier) > 0 {
+		t, err := strconv.Atoi(gasMultiplier)
+		if err != nil {
+			log.Println(err)
+		} else {
+			params.GasMultiplier = t
+		}
+	}
+	if len(gasOffset) > 0 {
+		t, err := strconv.Atoi(gasOffset)
+		if err != nil {
+			log.Println(err)
+		} else {
+			params.GasOffset = t
+		}
+	}
+	if len(waterMultiplier) > 0 {
+		t, err := strconv.Atoi(waterMultiplier)
+		if err != nil {
+			log.Println(err)
+		} else {
+			params.WaterMultiplier = t
+		}
+	}
+	if len(waterOffset) > 0 {
+		t, err := strconv.Atoi(waterOffset)
+		if err != nil {
+			log.Println(err)
+		} else {
+			params.WaterOffset = t
+		}
+	}
+
+	if len(tankDays) > 0 {
+		t, err := strconv.Atoi(tankDays)
+		if err != nil {
+			log.Println(err)
+		} else {
+			if slope, offset, err := CalculateGasTankConstants(t); err != nil {
+				log.Println("Calculation Error", err)
+			} else {
+				params.TankMultiplier = slope
+				params.TankOffset = offset
+			}
+		}
+	}
+
 	params.DebugOutput = (len(debug) > 0)
 	if !params.FuelCellLogOnEnable && (len(logOnEnable) > 0) {
 		// We are enabling a log on eneable here so we should set the event date/time
@@ -350,8 +398,47 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	params.FuelCellMaintenance = (len(maintenance) > 0)
 
+	// Clear the electrolyser list so next start will search for electrolysers
+	if len(clearElIps) > 0 {
+		params.Electrolysers = nil
+	}
+
 	if err := params.WriteSettings(); err != nil {
 		log.Println(err)
 	}
 	getSettings(w, nil)
+}
+
+/**
+CalculateGastTankConstanst looks over the past (days) days and calculates the constants necessary to calibrate
+the gas tank sensor based on the dryer output sensor readings.
+*/
+func CalculateGasTankConstants(days int) (slope float64, offset float64, err error) {
+	var (
+		dryerMin int
+		dryerMax int
+		tankMin  int
+		tankMax  int
+	)
+
+	log.Println("Calculating tank pressure constants for ", days, "days")
+	if rows, err := pDB.Query(`select min(droutputpressure), min(gasTankPressure), max(drOutputPressure), max(gasTankPressure)
+		from logging
+		where droutputpressure > 0
+		and logged > date_add(current_date, interval ? day)`, 0-days); err != nil {
+		log.Println(err)
+		return 0, 0, err
+	} else {
+		for rows.Next() {
+			if err = rows.Scan(&dryerMin, &tankMin, &dryerMax, &tankMax); err != nil {
+				log.Println(err)
+				return 0, 0, err
+			}
+		}
+	}
+	log.Println("drMax =", dryerMax, "drMin =", dryerMin, "tankMax =", tankMax, "tankMin =", tankMin)
+	slope = ((float64(dryerMax) - float64(dryerMin)) / 10.0) / (float64(tankMax) - float64(tankMin))
+	offset = (float64(dryerMax) / 10) - (slope * float64(tankMax))
+	log.Println("Slope = ", slope, "Offset = ", offset)
+	return
 }

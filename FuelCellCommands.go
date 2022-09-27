@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -162,6 +161,12 @@ func getErrorDKey(index int) string {
 	return errors[index]
 }
 
+// Parse a string as a uint8 value
+func parseDevice(device string) (uint8, error) {
+	d, err := strconv.ParseUint(device, 10, 8)
+	return uint8(d), err
+}
+
 func getAllFuelCellErrors(FlagA uint32, FlagB uint32, FlagC uint32, FlagD uint32) string {
 	faultA := getFuelCellError('A', FlagA)
 	faultB := getFuelCellError('B', FlagB)
@@ -260,39 +265,25 @@ func getFuelCellHtmlStatus(status *FCM804) (html string) {
 
 func logFuelCellData() {
 	var data struct {
-		Cell              sql.NullInt32
-		AnodePressure     sql.NullInt32
-		FaultA            uint32
-		FaultB            uint32
-		FaultC            uint32
-		FaultD            uint32
-		InletTemp         sql.NullInt32
-		OutletTemp        sql.NullInt32
-		Power             sql.NullInt32
-		Amps              sql.NullInt32
-		Volts             sql.NullInt32
-		State             sql.NullString
-		Fault             bool
-		Run               bool
-		Inactive          bool
-		Standby           bool
-		DCDCEnabled       bool
-		DCDCDisabled      bool
-		OnLoad            bool
-		FanPulse          bool
-		Derated           bool
-		SV01              bool
-		SV02              bool
-		SV04              bool
-		LouverOpen        bool
-		DCDC_Enable       bool
-		PowerFromStack    bool
-		PowerFromExternal bool
+		Cell           uint8
+		AnodePressure  uint16
+		FaultA         uint32
+		FaultB         uint32
+		FaultC         uint32
+		FaultD         uint32
+		InletTemp      int16
+		OutletTemp     int16
+		Power          int16
+		Amps           int16
+		Volts          uint16
+		State          sql.NullString
+		fanDutyCycle   uint16
+		louverPosition uint16
+		flags          uint16
 	}
 	strCommand := `INSERT INTO firefly.FuelCell
-	(AnodePressure, Power, FaultA, FaultB, FaultC, FaultD, OutletTemp, InletTemp, Volts, Amps, Cell, Fault, Run, Inactive, Standby, DCDC_Disabled, OnLoad
-	, FanPulse, Derated, SV01, SV02, SV04, LouverOpen, DCDC_Enabled, PowerFromStack, PowerFromExternal)
-	VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+(Cell, AnodePressure, Power, FaultA, FaultB, FaultC, FaultD, OutletTemp, InletTemp, Volts, Amps, State, Flags, FanDutyCycle, LouverPosition)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
 
 	var err error
 	if pDB == nil {
@@ -304,49 +295,74 @@ func logFuelCellData() {
 
 	for device, fuelCell := range canBus.fuelCell {
 		if fuelCell.IsSwitchedOn() {
-			data.Cell.Int32 = int32(device)
-			data.Cell.Valid = true
-			data.AnodePressure.Int32 = int32(fuelCell.getAnodePressure() * 1000)
-			data.AnodePressure.Valid = true
+			data.Cell = device
+			data.AnodePressure = fuelCell.getAnodePressureRaw()
 			data.FaultA = fuelCell.getFaultA()
 			data.FaultB = fuelCell.getFaultB()
 			data.FaultC = fuelCell.getFaultC()
 			data.FaultD = fuelCell.getFaultD()
-			data.InletTemp.Int32 = int32(fuelCell.getInletTemp() * 10)
-			data.InletTemp.Valid = true
-			data.OutletTemp.Int32 = int32(fuelCell.getOutletTemp() * 10)
-			data.OutletTemp.Valid = true
-			data.Amps.Int32 = int32(fuelCell.getOutputCurrent() * 100)
-			data.Amps.Valid = true
-			data.Volts.Int32 = int32(fuelCell.getOutputVolts() * 10)
-			data.Volts.Valid = true
-			data.Power.Int32 = int32(fuelCell.getOutputPower())
-			data.Power.Valid = true
-			data.State.String = fuelCell.GetState()
-			data.State.Valid = true
-			data.Fault = fuelCell.getFault()
-			data.Run = fuelCell.getRun()
-			data.Inactive = fuelCell.getInactive()
-			data.Standby = fuelCell.getStandby()
-			data.DCDCEnabled = fuelCell.getDCDCEnabled()
-			data.DCDCDisabled = fuelCell.getDCDCDisabled()
-			data.OnLoad = fuelCell.getOnLoad()
-			data.FanPulse = fuelCell.getFanPulse()
-			data.Derated = fuelCell.getDerated()
-			data.SV01 = fuelCell.getSV01()
-			data.SV02 = fuelCell.getSV02()
-			data.SV04 = fuelCell.getSV04()
-			data.LouverOpen = fuelCell.getLouverOpen()
-			data.PowerFromStack = fuelCell.getpowerfromstack()
-			data.PowerFromExternal = fuelCell.getpowerfromexternal()
-
-			//			(AnodePressure, Power, FaultA, FaultB, FaultC, FaultD, OutletTemp, InletTemp
-			//			, Volts, Amps, Cell, Fault, Run, Inactive, Standby, DCDC_Disabled, OnLoad
-			//			, FanPulse, Derated, SV01, SV02, SV04, LouverOpen, DCDC_Enabled, PowerFromStack, PowerFromExternal)
+			data.InletTemp = fuelCell.getInletTempRaw()
+			data.OutletTemp = fuelCell.getOutletTempRaw()
+			data.Amps = fuelCell.getOutputCurrentRaw()
+			data.Volts = fuelCell.getOutputVoltsRaw()
+			data.Power = fuelCell.getOutputPower()
+			if len(fuelCell.GetState()) > 0 {
+				data.State.String = fuelCell.GetState()
+				data.State.Valid = true
+			}
+			data.fanDutyCycle = fuelCell.getFanSPdutyRaw()
+			data.louverPosition = fuelCell.getLouverPositionRaw()
+			// Encode the flags to a bit field to save database space
+			data.flags = 0
+			if fuelCell.getFault() {
+				data.flags |= 1
+			}
+			if fuelCell.getRun() {
+				data.flags |= (1 << 1)
+			}
+			if fuelCell.getInactive() {
+				data.flags |= (1 << 2)
+			}
+			if fuelCell.getStandby() {
+				data.flags |= (1 << 3)
+			}
+			if fuelCell.getDCDCDisabled() {
+				data.flags |= (1 << 4)
+			}
+			if fuelCell.getOnLoad() {
+				data.flags |= (1 << 5)
+			}
+			if fuelCell.getFanPulse() {
+				data.flags |= (1 << 6)
+			}
+			if fuelCell.getDerated() {
+				data.flags |= (1 << 7)
+			}
+			if fuelCell.getSV01() {
+				data.flags |= (1 << 8)
+			}
+			if fuelCell.getSV02() {
+				data.flags |= (1 << 9)
+			}
+			if fuelCell.getSV04() {
+				data.flags |= (1 << 10)
+			}
+			if fuelCell.getLouverOpen() {
+				data.flags |= (1 << 11)
+			}
+			if fuelCell.getpowerfromstack() {
+				data.flags |= (1 << 12)
+			}
+			if fuelCell.getpowerfromexternal() {
+				data.flags |= (1 << 13)
+			}
+			if fuelCell.getDCDCEnabled() {
+				data.flags |= (1 << 14)
+			}
+			//Cell, AnodePressure, Power, FaultA, FaultB, FaultC, FaultD, OutletTemp, InletTemp, Volts, Amps, State, Flags, FanDutyCycle, LouverPosition
 			_, err = pDB.Exec(strCommand,
-				data.AnodePressure, data.Power, data.FaultA, data.FaultB, data.FaultC, data.FaultD, data.OutletTemp, data.InletTemp,
-				data.Volts, data.Amps, data.Cell, data.Fault, data.Run, data.Inactive, data.Standby, data.DCDCDisabled, data.OnLoad,
-				data.FanPulse, data.Derated, data.SV01, data.SV02, data.SV04, data.LouverOpen, data.DCDCEnabled, data.PowerFromStack, data.PowerFromExternal)
+				data.Cell, data.AnodePressure, data.Power, data.FaultA, data.FaultB, data.FaultC, data.FaultD, data.OutletTemp, data.InletTemp,
+				data.Volts, data.Amps, data.State, data.flags, data.fanDutyCycle, data.louverPosition)
 			if err != nil {
 				log.Printf("Error writing fuel cell values to the database - %s", err)
 				_ = pDB.Close()
@@ -361,21 +377,35 @@ Get fuel cell recorded values
 */
 func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	type Row struct {
-		Logged           string
-		FC1Volts         float64
-		FC1Current       float64
-		FC1Power         float64
-		FC1AnodePressure float64
-		FC2Volts         float64
-		FC2Current       float64
-		FC2Power         float64
-		FC2AnodePressure float64
-		H2Pressure       float64
-		GasOn            bool
-		Fc1Enable        bool
-		Fc1Run           bool
-		Fc2Enable        bool
-		Fc2Run           bool
+		Logged            string  `json:"logged"`
+		AnodePressure     float64 `json:"anodePressure"`
+		Power             float64 `json:"power"`
+		FaultA            string  `json:"faultA"`
+		FaultB            string  `json:"faultB"`
+		FaultC            string  `json:"faultC"`
+		FaultD            string  `json:"faultD"`
+		Volts             float64 `json:"volts"`
+		Current           float64 `json:"current"`
+		InletTemp         float64 `json:"inletTemp"`
+		OutletTemp        float64 `json:"outletTemp"`
+		Fan               float64 `json:"fan"`
+		Louver            float64 `json:"louver"`
+		State             string  `json:"state"`
+		Fault             bool    `json:"fault"`
+		Run               bool    `json:"run"`
+		Inactive          bool    `json:"inactive"`
+		Standby           bool    `json:"standby"`
+		DCDC_Disabled     bool    `json:"dcdcDisabled"`
+		OnLoad            bool    `json:"onLoad"`
+		FanPulse          bool    `json:"fanPulse"`
+		Derated           bool    `json:"derated"`
+		SV01              bool    `json:"sv01"`
+		SV02              bool    `json:"sv02"`
+		SV04              bool    `json:"sv04"`
+		LouverOpen        bool    `json:"louverOpen"`
+		PowerFromStack    bool    `json:"powerFromStack"`
+		PowerFromExternal bool    `json:"powerFromExternal"`
+		DCDC_Enabled      bool    `json:"dcdcEnabled"`
 	}
 
 	var results []*Row
@@ -385,12 +415,21 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	from := vars["from"]
 	to := vars["to"]
+	device := vars["device"]
 
 	var (
-		tFrom time.Time
-		tTo   time.Time
-		rows  *sql.Rows
+		tFrom  time.Time
+		tTo    time.Time
+		Device uint8
+		rows   *sql.Rows
 	)
+
+	if tDevice, err := strconv.ParseUint(device, 10, 8); err != nil {
+		ReturnJSONError(w, "FuelCell", err, http.StatusBadRequest, false)
+		return
+	} else {
+		Device = uint8(tDevice)
+	}
 
 	tFrom, err := time.Parse("2006-1-2 15:4", from)
 	if err == nil {
@@ -406,17 +445,70 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	// If one hour or less return all data otherwise average out over one minute intervals
 	if tTo.Sub(tFrom) <= time.Hour {
-		rows, err = pDB.Query(`SELECT UNIX_TIMESTAMP(logged), IFNULL(fc1OutputVoltage,0), IFNULL(fc1OutputCurrent,0), IFNULL(fc1OutputPower,0), IFNULL(fc1AnodePressure, 0), 
-       IFNULL(fc2OutputVoltage,0), IFNULL(fc2OutputCurrent,0), IFNULL(fc2OutputPower,0), IFNULL(fc2AnodePressure, 0), gasTankPressure
-  FROM firefly.logging
-  WHERE logged BETWEEN ? and ?`, from, to)
-
+		rows, err = pDB.Query(`SELECT UNIX_TIMESTAMP(logged)
+										, AnodePressure
+										, Power
+										, FaultA
+										, FaultB
+										, FaultC
+										, FaultD
+										, OutletTemp
+										, InletTemp
+										, Volts
+										, Amps
+										, IFNULL(State, "")
+										, FanDutyCycle
+										, LouverPosition
+										, Fault
+										, Run
+										, Inactive
+										, Standby
+										, DCDC_Disabled
+										, OnLoad
+										, FanPulse
+										, Derated
+										, SV01
+										, SV02
+										, SV04
+										, LouverOpen
+										, PowerFromStack
+										, PowerFromExternal
+										, DCDC_Enabled
+  FROM firefly.FuelCellData
+  WHERE logged BETWEEN ? AND ? AND cell = ?`, from, to, Device)
 	} else {
-		rows, err = pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(AVG(fc1OutputVoltage),0), IFNULL(AVG(fc1OutputCurrent),0), IFNULL(AVG(fc1OutputPower),0), IFNULL(AVG(fc1AnodePressure),0),
-       IFNULL(AVG(fc2OutputVoltage),0), IFNULL(AVG(fc2OutputCurrent),0), IFNULL(AVG(fc2OutputPower),0), IFNULL(AVG(fc1AnodePressure),0), AVG(gasTankPressure)
-  FROM firefly.logging
-  WHERE logged BETWEEN ? and ?
-  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
+		rows, err = pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60
+										, ROUND(AVG(AnodePressure), 1)
+										, ROUND(AVG(Power), 1)
+										, LAST_VALUE(FaultA)
+										, LAST_VALUE(FaultB)
+										, LAST_VALUE(FaultC)
+										, LAST_VALUE(FaultD)
+										, ROUND(AVG(OutletTemp), 1)
+										, ROUND(AVG(InletTemp), 1)
+										, ROUND(AVG(Volts), 1)
+										, ROUND(AVG(Amps), 1)
+										, IFNULL(LAST_VALUE(State), "")
+										, ROUND(AVG(FanDutyCycle), 1)
+										, ROUND(AVG(LouverPosition), 1)
+										, LAST_VALUE(Fault)
+										, LAST_VALUE(Run)
+										, LAST_VALUE(Inactive)
+										, LAST_VALUE(Standby)
+										, LAST_VALUE(DCDC_Disabled)
+										, LAST_VALUE(OnLoad)
+										, LAST_VALUE(FanPulse)
+										, LAST_VALUE(Derated)
+										, LAST_VALUE(SV01)
+										, LAST_VALUE(SV02)
+										, LAST_VALUE(SV04)
+										, LAST_VALUE(LouverOpen)
+										, LAST_VALUE(PowerFromStack)
+										, LAST_VALUE(PowerFromExternal)
+										, LAST_VALUE(DCDC_Enabled)
+  FROM firefly.FuelCellData
+  WHERE logged BETWEEN ? AND ? AND cell = ?
+  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to, Device)
 	}
 
 	if err != nil {
@@ -431,8 +523,13 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	}()
 	for rows.Next() {
 		row := new(Row)
-		if err := rows.Scan(&(row.Logged), &(row.FC1Volts), &(row.FC1Current), &(row.FC1Power), &(row.FC1AnodePressure),
-			&(row.FC2Volts), &(row.FC2Current), &(row.FC2Power), &(row.FC2AnodePressure), &(row.H2Pressure)); err != nil {
+		if err := rows.Scan(&(row.Logged), &(row.AnodePressure), &(row.Power),
+			&(row.FaultA), &(row.FaultB), &(row.FaultC), &(row.FaultD),
+			&(row.OutletTemp), &(row.InletTemp), &(row.Volts), &(row.Current),
+			&(row.State), &(row.Fan), &(row.Louver),
+			&(row.Fault), &(row.Run), &(row.Inactive), &(row.Standby), &(row.DCDC_Disabled), &(row.OnLoad),
+			&(row.FanPulse), &(row.Derated), &(row.SV01), &(row.SV02), &(row.SV04),
+			&(row.LouverOpen), &(row.PowerFromStack), &(row.PowerFromExternal), &(row.DCDC_Enabled)); err != nil {
 			log.Print(err)
 		} else {
 			results = append(results, row)
@@ -449,114 +546,43 @@ func getFuelCellHistory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-/**
-Turn on the fuel cell
-*/
-func setFcOn(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	device, err := strconv.ParseInt(vars["device"], 10, 8)
-	if (err != nil) || (device > 1) || (device < 0) {
-		log.Print("Invalid fuel cell in 'on' request")
-		getStatus(w, r)
-		return
-	}
-	err = turnOnFuelCell(device)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusInternalServerError, true)
-	} else {
-		returnJSONSuccess(w)
-	}
-}
-
-/**
-Turn off the fuel cell
-*/
-func setFcOff(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	device, err := strconv.ParseInt(vars["device"], 10, 8)
-	if (err != nil) || (device > 1) || (device < 0) {
-		log.Print("Invalid fuel cell in 'off' request")
-		getStatus(w, r)
-		return
-	}
-	err = turnOffFuelCell(device)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusInternalServerError, true)
-		return
-	}
-	returnJSONSuccess(w)
-}
-
-/**
-Start the fuel cell
-*/
-func setFcRun(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	device, err := strconv.ParseInt(vars["device"], 10, 8)
-	if (err != nil) || (device > 1) || (device < 0) {
-		ReturnJSONErrorString(w, "Fuel Cell", "Invalid fuel cell in 'run' request", http.StatusBadRequest, true)
-		return
-	}
-
-	device = device
-	err = startFuelCell(device)
-
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusInternalServerError, true)
-		return
-	}
-	returnJSONSuccess(w)
-}
-
-/**
-Stop the fuel cell
-*/
-func setFcStop(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	device, err := strconv.ParseInt(vars["device"], 10, 8)
-	if (err != nil) || (device > 1) || (device < 0) {
-		ReturnJSONErrorString(w, "Fuel Cell", "Invalid fuel cell in 'on' request", http.StatusInternalServerError, true)
-		return
-	}
-	err = stopFuelCell(device)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusInternalServerError, true)
-		return
-	}
-	returnJSONSuccess(w)
-}
-
 /***
 turnOnFuelCell first checks then turns on the fuel cell if it is off with a delay of 2 sconds to allow the deivce tot come on line. device is 0 based
 */
-func turnOnFuelCell(device int64) error {
+func turnOnFuelCell(device uint8) error {
 	switch device {
 	case 0:
-		if SystemStatus.Relays.FuelCell1Enable {
+		if SystemStatus.Relays.FC0Enable {
 			return nil
+		} else {
+			if len(canBus.fuelCell) > 0 {
+				canBus.fuelCell[device].Clear()
+			}
+			if params.FuelCellLogOnEnable {
+				canBus.setEventDateTime()
+			}
+			if err := mbusRTU.FC0OnOff(true); err != nil {
+				return err
+			}
 		}
 	case 1:
-		if SystemStatus.Relays.FuelCell2Enable {
+		if SystemStatus.Relays.FC1Enable {
 			return nil
+		} else {
+			if len(canBus.fuelCell) > 1 {
+				canBus.fuelCell[device].Clear()
+			}
+			if params.FuelCellLogOnEnable {
+				canBus.setEventDateTime()
+			}
+			if err := mbusRTU.FC1OnOff(true); err != nil {
+				return err
+			}
 		}
 	default:
 		log.Print("Cannot turn on unknown device %d", device)
 		return fmt.Errorf("Unknown device %d", device)
 	}
-	strCommand := fmt.Sprintf("fc on %d", device)
-	if len(canBus.fuelCell) > int(device) {
-		canBus.fuelCell[uint16(device)].Clear()
-	}
-	if params.FuelCellLogOnEnable {
-		canBus.setEventDateTime()
-	}
-	debugPrint("Turning fuel cell", device, "on")
-	if _, err := sendCommand(strCommand); err != nil {
-		log.Print(err)
-		return err
-	}
-
-	//	log.Println("Fuel cell", device, "turned on")
 	time.Sleep(time.Second * 2)
 	return nil
 }
@@ -565,17 +591,15 @@ func turnOnFuelCell(device int64) error {
 startFuelCell turns on then starts the fuel cell - device is 0 based
 	Also starts an on demand trace
 */
-func startFuelCell(device int64) error {
+func startFuelCell(device uint8) error {
 	if err := turnOnFuelCell(device); err != nil {
 		log.Print(err)
 	}
-	if err := turnOnGas(); err != nil {
+	if err := mbusRTU.GasOnOff(true); err != nil {
 		log.Print(err)
 	}
 
-	strCommand := fmt.Sprintf("fc run %d", device)
-	//	log.Println("Starting fuel cell ", device)
-	if _, err := sendCommand(strCommand); err != nil {
+	if err := mbusRTU.FCRunStop(device, true); err != nil {
 		log.Print(err)
 		return err
 	}
@@ -589,30 +613,29 @@ func startFuelCell(device int64) error {
 /**
 stopFuelCell stops the fuel cell - device is 0 based
 */
-func stopFuelCell(device int64) error {
+func stopFuelCell(device uint8) error {
 	switch device {
 	case 0:
-		if !SystemStatus.Relays.FuelCell1Run {
+		if !SystemStatus.Relays.FC0Run {
 			return nil
 		}
+		if err := mbusRTU.FC0RunStop(false); err != nil {
+			log.Print(err)
+			return err
+		}
 	case 1:
-		if !SystemStatus.Relays.FuelCell2Run {
+		if !SystemStatus.Relays.FC1Run {
 			return nil
+		}
+		if err := mbusRTU.FC1RunStop(false); err != nil {
+			log.Print(err)
+			return err
 		}
 	default:
 		log.Print("Cannot stop unknown device %d", device)
 		return fmt.Errorf("Unknown device %d", device)
 	}
-	// Turn the gas off first to prevent an overpressure spike when the Fuel Cell suddenly stops
-	if err := turnOffGas(); err != nil {
-		log.Print(err)
-	}
 
-	strCommand := fmt.Sprintf("fc stop %d", device)
-	if _, err := sendCommand(strCommand); err != nil {
-		log.Print(err)
-		return err
-	}
 	if params.FuelCellLogOnRun && !params.FuelCellLogOnEnable {
 		// Stop the canbus log in fifteen seconds
 		canBus.setOnDemandRecording(time.Now().Add(time.Second * 15))
@@ -626,18 +649,37 @@ func stopFuelCell(device int64) error {
 PowerDown waits for the fuel cell to stop delivering power then turns the enable relay off
 If it is outputting power it will wait 2 seconds and try again. After 2 minutes it will turn the fuel cell off even if it didn't stop
 */
-func PowerDown(device int64) {
-	strCommand := fmt.Sprintf("fc off %d", device)
+func PowerDown(device uint8) {
 	for i := 0; i < 60; i++ {
 		// If the fuel cell is registered and we have data from it...
 		if len(canBus.fuelCell) > int(device) {
 			// If the fuel cell is not outputting power turn it off
-			if canBus.fuelCell[uint16(device)].OutputPower <= 0 {
-				if _, err := sendCommand(strCommand); err != nil {
-					log.Print(err)
-				} else {
-					canBus.clearEventDateTime()
-					return
+			if canBus.fuelCell[device].OutputPower <= 0 {
+				switch device {
+				case 0:
+					if err := mbusRTU.FC0OnOff(false); err != nil {
+						log.Print(err)
+					} else {
+						if !mbusRTU.fc1en {
+							canBus.clearEventDateTime()
+							if err := mbusRTU.GasOnOff(false); err != nil {
+								log.Println(err)
+							}
+						}
+						return
+					}
+				case 1:
+					if err := mbusRTU.FC0OnOff(false); err != nil {
+						log.Print(err)
+					} else {
+						if !mbusRTU.fc0en {
+							canBus.clearEventDateTime()
+							if err := mbusRTU.GasOnOff(false); err != nil {
+								log.Println(err)
+							}
+						}
+						return
+					}
 				}
 			} else {
 				// Just to be sure, tell it to stop again
@@ -650,7 +692,7 @@ func PowerDown(device int64) {
 		}
 	}
 	log.Printf("Times out waiting for fuel cell %d to stop. Turning fuel cell off now!", device)
-	if _, err := sendCommand(strCommand); err != nil {
+	if err := mbusRTU.FCOnOff(device, false); err != nil {
 		log.Print(err)
 	}
 }
@@ -658,7 +700,7 @@ func PowerDown(device int64) {
 /***
 turnOffFuelCell first stops then turns off the fuel cell. device is 0 based
 */
-func turnOffFuelCell(device int64) error {
+func turnOffFuelCell(device uint8) error {
 	if err := stopFuelCell(device); err != nil {
 		log.Print(err)
 	}
@@ -675,50 +717,78 @@ func turnOffFuelCell(device int64) error {
 	return nil
 }
 
-func restartFc(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	device, err := strconv.ParseInt(vars["device"], 10, 8)
-	if (err != nil) || (device > 1) || (device < 0) {
-		ReturnJSONErrorString(w, "Fuel Cell", "Invalid fuel cell in 'on' request", http.StatusBadRequest, true)
-		return
+//func restartFc(w http.ResponseWriter, r *http.Request) {
+//	vars := mux.Vars(r)
+//	device, err := strconv.ParseInt(vars["device"], 10, 8)
+//	if (err != nil) || (device > 1) || (device < 0) {
+//		ReturnJSONErrorString(w, "Fuel Cell", "Invalid fuel cell in 'on' request", http.StatusBadRequest, true)
+//		return
+//	}
+//}
+
+func fcEnabled(device uint8) bool {
+	switch device {
+	case 0:
+		return SystemStatus.Relays.FC0Enable
+	case 1:
+		return SystemStatus.Relays.FC1Enable
+	default:
+		log.Print("Invalid fuel cell in fcEnabled")
 	}
-	if device == 0 {
-		if err := turnOffFuelCell(0); err != nil {
-			log.Print(err)
-		}
-		// Wait up to 3 minutes for the fuel cell to be turned off
-		for i := 0; i < 180; i++ {
-			if SystemStatus.Relays.FuelCell1Enable {
-				time.Sleep(time.Second * 2)
-			}
-		}
-		if SystemStatus.Relays.FuelCell1Enable {
-			log.Print("Fuel Cell %d failed to turn off")
-			ReturnJSONErrorString(w, "Fuel Cell", "Failed to turn the Fuel Cell off.", http.StatusInternalServerError, true)
+	return false
+}
+
+func NewStartFuelCellFFunc(device uint8) func() {
+	return func() {
+		if err := startFuelCell(device); err != nil {
+			log.Println("Error starting fuel cell %d -", device, err)
 			return
 		}
-
-		delayTime := OFFTIMEFORFUELCELLRESTART
-		if len(canBus.fuelCell) > 0 {
-			// If this is not the first restart, add 10 seconds delay for each time we have tried
-			delayTime = OFFTIMEFORFUELCELLRESTART + (time.Second * time.Duration(canBus.fuelCell[0].NumRestarts*10))
-		}
-		time.AfterFunc(delayTime, func() {
-			if err := startFuelCell(0); err != nil {
-				log.Println("Error starting fuel cell 0 -", err)
-			}
-		})
-	} else {
-		if err := turnOffFuelCell(1); err != nil {
-			log.Print(err)
-		}
-		time.AfterFunc(OFFTIMEFORFUELCELLRESTART, func() {
-			if err := startFuelCell(1); err != nil {
-				log.Println("Error starting fuel cell 1 -", err)
-			}
-		})
 	}
-	returnJSONSuccess(w)
+}
+
+func restartFc(device uint8) error {
+	var pFC *FCM804
+	switch device {
+	case 0:
+		if len(canBus.fuelCell) > 0 {
+			pFC = canBus.fuelCell[0]
+		}
+	case 1:
+		if len(canBus.fuelCell) > 1 {
+			pFC = canBus.fuelCell[1]
+		}
+	default:
+		err := fmt.Errorf("Invalid fuel cell in restart command")
+		log.Print(err)
+		return err
+	}
+
+	// Turn the fuel cell off first
+	if err := turnOffFuelCell(0); err != nil {
+		log.Print(err)
+	}
+
+	// Wait up to 3 minutes for the fuel cell to be turned off
+	for i := 0; i < 180; i++ {
+		if fcEnabled(device) {
+			// Wait another 2 seconds and check again
+			time.Sleep(time.Second * 2)
+		}
+	}
+	if fcEnabled(device) {
+		err := fmt.Errorf("Failed to turn Fuel Cell %d off.", device)
+		return err
+	}
+
+	delayTime := OFFTIMEFORFUELCELLRESTART
+	if pFC != nil {
+		// If this is not the first restart, add 10 seconds delay for each time we have tried
+		delayTime = OFFTIMEFORFUELCELLRESTART + (time.Second * time.Duration(canBus.fuelCell[0].NumRestarts*10))
+	}
+	time.AfterFunc(delayTime, NewStartFuelCellFFunc(device))
+
+	return nil
 }
 
 func fcStatus(w http.ResponseWriter, r *http.Request) {
@@ -731,7 +801,7 @@ func fcStatus(w http.ResponseWriter, r *http.Request) {
 		InletTemp float32 `json:"temp"`
 	}
 	vars := mux.Vars(r)
-	device, err := strconv.ParseInt(vars["device"], 10, 8)
+	device, err := parseDevice(vars["device"])
 	if (err != nil) || (device > 1) || (device < 0) {
 		log.Println(jErr.AddErrorString("Fuel Cell", "Invalid fuel cell in 'status' request"))
 		jErr.ReturnError(w, 400)
@@ -739,9 +809,9 @@ func fcStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if device == 0 {
-		jStatus.On = SystemStatus.Relays.FuelCell1Run
+		jStatus.On = SystemStatus.Relays.FC0Run
 	} else {
-		jStatus.On = SystemStatus.Relays.FuelCell2Run
+		jStatus.On = SystemStatus.Relays.FC1Run
 	}
 	if int(device) >= len(canBus.fuelCell) {
 		if device > 0 {
@@ -754,10 +824,10 @@ func fcStatus(w http.ResponseWriter, r *http.Request) {
 		jStatus.Power = 0.0
 		jStatus.InletTemp = 0.0
 	} else {
-		jStatus.Amps = canBus.fuelCell[uint16(device)].getOutputCurrent()
-		jStatus.Volts = canBus.fuelCell[uint16(device)].getOutputVolts()
-		jStatus.Power = canBus.fuelCell[uint16(device)].getOutputPower()
-		jStatus.InletTemp = canBus.fuelCell[uint16(device)].getInletTemp()
+		jStatus.Amps = canBus.fuelCell[device].getOutputCurrent()
+		jStatus.Volts = canBus.fuelCell[device].getOutputVolts()
+		jStatus.Power = canBus.fuelCell[device].getOutputPower()
+		jStatus.InletTemp = canBus.fuelCell[device].getInletTemp()
 	}
 	strResponse, err := json.Marshal(jStatus)
 	if err != nil {
@@ -768,45 +838,31 @@ func fcStatus(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func setFcOnOff(w http.ResponseWriter, r *http.Request) {
-	var jBody struct {
-		OnOff bool `json:"fuelcell"`
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusBadRequest, true)
-		return
-	}
-	err = json.Unmarshal(body, &jBody)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusBadRequest, true)
-		return
-	}
-	if jBody.OnOff {
-		setFcRun(w, r)
-		debugPrint("Fuel cell turned on")
-	} else {
-		setFcOff(w, r)
-		debugPrint("Fuel cell turned off")
-	}
-}
-
-func setFcMaintenance(w http.ResponseWriter, r *http.Request) {
-	var jStatus struct {
-		On bool `json:"maintenance"`
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusInternalServerError, true)
-		return
-	}
-	err = json.Unmarshal(body, &jStatus)
-	if err != nil {
-		ReturnJSONError(w, "Fuel Cell", err, http.StatusInternalServerError, true)
-	}
-	params.FuelCellMaintenance = jStatus.On
-	if err := params.WriteSettings(); err != nil {
-		log.Print(err)
-	}
-	returnJSONSuccess(w)
-}
+//func setFcOnOff(w http.ResponseWriter, r *http.Request) {
+//	var jBody OnOffPayload
+//
+//	jBody.Device = 0xff
+//
+//	body, err := io.ReadAll(r.Body)
+//	if err != nil {
+//		ReturnJSONError(w, "Fuel Cell", err, http.StatusBadRequest, true)
+//		return
+//	}
+//	err = json.Unmarshal(body, &jBody)
+//	if err != nil {
+//		ReturnJSONError(w, "Fuel Cell", err, http.StatusBadRequest, true)
+//		return
+//	}
+//	if jBody.Device == 0xff {
+//		ReturnJSONErrorString(w, "Fuel Cell", "Device was not specified in the payload", http.StatusBadRequest, true)
+//		return
+//	}
+//
+//	if jBody.State {
+//		setFcRun(w, r)
+//		debugPrint("Fuel cell turned on")
+//	} else {
+//		setFcOff(w, r)
+//		debugPrint("Fuel cell turned off")
+//	}
+//}

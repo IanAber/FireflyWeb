@@ -19,7 +19,9 @@ func CalculateOffTime() {
 			pDB = dbPtr
 		}
 	}
-	if rows, err := pDB.Query("select concat(current_date, \"T\", max(time(logged))) as logged from logging where el1StateCode = 3 and logged > date_add(current_date, interval -7 day)"); err != nil {
+	if rows, err := pDB.Query(`select ifnull(concat(current_date, "T", greatest(max(time(logged)), time('18:00'))),concat(current_date, "T18:00:00")) as logged
+from logging
+where el1StateCode = 3 and logged > date_add(current_date, interval -7 day)`); err != nil {
 		log.Print(err)
 		return
 	} else {
@@ -44,25 +46,23 @@ func CalculateOffTime() {
 }
 
 func ShutDownElectrolysers() bool {
-	if !SystemStatus.Relays.Electrolyser1 && !SystemStatus.Relays.Electrolyser2 {
+	if !SystemStatus.Relays.EL0 && !SystemStatus.Relays.EL1 {
 		// Already off
 		return true
 	}
-	log.Println("Auto-shutting down electrolysers.")
 	for _, el := range SystemStatus.Electrolysers {
 		if el.status.StackVoltage > 30 {
 			// Stack voltage on one electrolyser is too high
 			return false
 		}
 	}
-	strCommand := "el2 off"
-	if _, err := sendCommand(strCommand); err != nil {
+	log.Println("Auto-shutting down electrolysers.")
+	if err := mbusRTU.EL1OnOff(false); err != nil {
 		log.Print(err)
 		return false
 	}
 
-	strCommand = "el1dr off"
-	if _, err := sendCommand(strCommand); err != nil {
+	if err := mbusRTU.EL0OnOff(false); err != nil {
 		log.Print(err)
 		return false
 	}

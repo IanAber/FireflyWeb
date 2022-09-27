@@ -41,7 +41,7 @@
 
             // prepare jqxChart settings
             var currentSettings = {
-                title: "Fuel Cell 1 Performance",
+                title: "Fuel Cell 0 Performance",
                 description: "Fuel Cell Power.",
                 enableAnimations: false,
                 animationDuration: 1000,
@@ -114,8 +114,8 @@
                 }]
             };
 
-            if ($("#cell").val() === 2) {
-                currentSettings.title = "Fuel Cell 2 Detail";
+            if ($("#cell").val() === 1) {
+                currentSettings.title = "Fuel Cell 1 Detail";
             }
 
             $('#currentChartContainer').jqxChart(currentSettings);

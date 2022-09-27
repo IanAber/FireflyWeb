@@ -21,7 +21,7 @@
         end.setMinutes(59);
         end.setSeconds(59);
         var currentTimeOut;
-		var device = 1;
+		var device = 0;
 
 		function buildURLForTimes(start, end) {
 			$("#startAt").jqxDateTimeInput('setDate', start );
@@ -56,14 +56,14 @@
 			device = urlObject.searchParams.get("device");
 
 			device = parseInt(device)
-			if ((device !== 1) && (device !== 2)) {
+			if ((device !== 0) && (device !== 1)) {
 				alert("Invalid device [" + device + "] selected")
-				device = 1;
+				device = 0;
 			}
 
 			// prepare jqxChart settings
 			var currentSettings = {
-				title: "Hydrogen Generation Electrolyser 1",
+				title: "Hydrogen Generation Electrolyser 0",
 				description: "Electrolyser Performance.",
 				enableAnimations: false,
 				animationDuration: 1000,
@@ -72,7 +72,7 @@
 				padding: { left: 5, top: 5, right: 5, bottom: 5 },
 				titlePadding: { left: 90, top: 0, right: 0, bottom: 10 },
 				categoryAxis: {
-					dataField: 'Logged',
+					dataField: 'logged',
 					showGridLines: false,
 					textRotationAngle: 270,
 					unitInterval: 1800,
@@ -102,7 +102,7 @@
 						gridLinesColor: '#D02020'
 					},
 					series: [{
-						dataField: 'EL1Rate',
+						dataField: 'el0Rate',
 						displayText: 'Set Rate (%)',
 						lineColor: '#D02020',
 						fillColor: '#D02020',
@@ -128,7 +128,7 @@
 						gridLinesColor: '#2020D0'
 					},
 					series: [{
-						dataField: 'EL1Temp',
+						dataField: 'el0Temp',
 						displayText: 'Temp(℃)',
 						lineColor: '#2020D0',
 						fillColor: '#2020D0',
@@ -154,7 +154,7 @@
 						gridLinesColor: '#80D0D0'
 					},
 					series: [{
-						dataField: 'EL1StackCurrent',
+						dataField: 'el0StackCurrent',
 						displayText: 'Current(Amps)',
 						lineColor: '#80D0D0',
 						fillColor: '#80D0D0',
@@ -180,7 +180,7 @@
 						gridLinesColor: '#20D020'
 					},
 					series: [{
-						dataField: 'EL1H2Flow',
+						dataField: 'el0H2Flow',
 						displayText: 'Production (NL/hr)',
 						lineColor: '#20D020',
 						fillColor: '#20D020',
@@ -206,7 +206,7 @@
 						gridLinesColor: '#808020'
 					},
 					series: [{
-						dataField: 'EL1StackVoltage',
+						dataField: 'el0StackVoltage',
 						displayText: 'Stack Voltage',
 						lineColor: '#808020',
 						fillColor: '#808020',
@@ -214,13 +214,13 @@
 				}]
 			};
 
-			if (device === 2) {
-				currentSettings.title = "Hydrogen Generation Electrolyser 2";
-				currentSettings.seriesGroups[0].series[0].dataField = 'EL2Rate';
-				currentSettings.seriesGroups[1].series[0].dataField = 'EL2Temp';
-				currentSettings.seriesGroups[2].series[0].dataField = 'EL2StackCurrent';
-				currentSettings.seriesGroups[3].series[0].dataField = 'EL2H2Flow';
-				currentSettings.seriesGroups[4].series[0].dataField = 'EL2StackVoltage';
+			if (device === 1) {
+				currentSettings.title = "Hydrogen Generation Electrolyser 1";
+				currentSettings.seriesGroups[0].series[0].dataField = 'el1Rate';
+				currentSettings.seriesGroups[1].series[0].dataField = 'el1Temp';
+				currentSettings.seriesGroups[2].series[0].dataField = 'el1StackCurrent';
+				currentSettings.seriesGroups[3].series[0].dataField = 'el1H2Flow';
+				currentSettings.seriesGroups[4].series[0].dataField = 'el1StackVoltage';
 			}
 			$('#currentChartContainer').jqxChart(currentSettings);
 			startAt = $("#startAt");
@@ -246,50 +246,41 @@
 									alert(data.error);
 								} else {
 									data.push({
-									"Logged":(Math.trunc(end)).toString(),
-										"EL1Rate":data[data.length - 1].EL1Rate,
-										"EL1Temp":data[data.length - 1].EL1Temp,
-										"EL1State":data[data.length - 1].EL1State,
-										"EL1H2Flow":data[data.length - 1].EL1H2Flow,
-										"EL1InnerPressure":data[data.length - 1].EL1InnerPressure,
-										"EL1OuterPressure":data[data.length - 1].EL1OuterPressure,
-										"EL1StackVoltage":data[data.length - 1].EL1StackVoltage,
-										"EL1StackCurrent":data[data.length - 1].EL1StackCurrent,
-										"EL1SystemState":data[data.length - 1].EL1SystemState,
-										"EL1WaterPressure":data[data.length - 1].EL1WaterPressure,
+									"logged":(Math.trunc(end)).toString(),
+										"el0Rate":data[data.length - 1].el0Rate,
+										"el0Temp":data[data.length - 1].el0Temp,
+										"el0State":data[data.length - 1].el0State,
+										"el0H2Flow":data[data.length - 1].el0H2Flow,
+										"el0InnerPressure":data[data.length - 1].el0InnerPressure,
+										"el0OuterPressure":data[data.length - 1].el0OuterPressure,
+										"el0StackVoltage":data[data.length - 1].el0StackVoltage,
+										"el0StackCurrent":data[data.length - 1].el0StackCurrent,
+										"el0SystemState":data[data.length - 1].el0SystemState,
+										"el0WaterPressure":data[data.length - 1].el0WaterPressure,
 
-										"DR1Temp0":data[data.length - 1].DR1Temp0,
-										"DR1Temp1":data[data.length - 1].DR1Temp1,
-										"DR1Temp2":data[data.length - 1].DR1Temp2,
-										"DR1Temp3":data[data.length - 1].DR1Temp3,
-										"DR1InputPressure":data[data.length - 1].DR1InputPressure,
-										"DR1OutputPressure":data[data.length - 1].DR1OutputPressure,
+										"dryerTemp0":data[data.length - 1].dryerTemp0,
+										"dryerTemp1":data[data.length - 1].dryerTemp1,
+										"dryerTemp2":data[data.length - 1].dryerTemp2,
+										"dryerTemp3":data[data.length - 1].dryerTemp3,
+										"dryerInputPressure":data[data.length - 1].dryerInputPressure,
+										"dryerOutputPressure":data[data.length - 1].dryerOutputPressure,
 
-										"EL2Rate":data[data.length - 1].EL2Rate,
-										"EL2Temp":data[data.length - 1].EL2Temp,
-										"EL2State":data[data.length - 1].EL2State,
-										"EL2H2Flow":data[data.length - 1].EL2H2Flow,
-										"EL2InnerPressure":data[data.length - 1].EL2InnerPressure,
-										"EL2OuterPressure":data[data.length - 1].EL2OuterPressure,
-										"EL2StackVoltage":data[data.length - 1].EL2StackVoltage,
-										"EL2StackCurrent":data[data.length - 1].EL2StackCurrent,
-										"EL2SystemState":data[data.length - 1].EL2SystemState,
-										"EL2WaterPressure":data[data.length - 1].EL2WaterPressure,
+										"el1Rate":data[data.length - 1].el1Rate,
+										"el1State":data[data.length - 1].el1State,
+										"el1H2Flow":data[data.length - 1].el1H2Flow,
+										"el1InnerPressure":data[data.length - 1].el1InnerPressure,
+										"el1OuterPressure":data[data.length - 1].el1OuterPressure,
+										"el1StackCurrent":data[data.length - 1].el1StackCurrent,
+										"el1SystemState":data[data.length - 1].el1SystemState,
+										"el1WaterPressure":data[data.length - 1].el1WaterPressure,
 
-										"DR2Temp0":data[data.length - 1].DR2Temp0,
-										"DR2Temp1":data[data.length - 1].DR2Temp1,
-										"DR2Temp2":data[data.length - 1].DR2Temp2,
-										"DR2Temp3":data[data.length - 1].DR2Temp3,
-										"DR2InputPressure":data[data.length - 1].DR2InputPressure,
-										"DR2OutputPressure":data[data.length - 1].DR2OutputPressure,
-
-										"H2Pressure":data[data.length - 1].H2Pressure
+										"h2Pressure":data[data.length - 1].H2Pressure
 									});
 
 										currentContainer = $('#currentChartContainer');
 										currentContainer.jqxChart({'source':data});
 										currentContainer.jqxChart({'categoryAxis':{
-                                                dataField: 'Logged',
+                                                dataField: 'logged',
                                                 showGridLines: false,
                                                 textRotationAngle: 270,
                                                 unitInterval: 1800,
@@ -323,7 +314,6 @@
                         refresh(buildURL());
                     }
                 }
-
 
                 function goBack() {
                     clearTimeout(currentTimeOut);

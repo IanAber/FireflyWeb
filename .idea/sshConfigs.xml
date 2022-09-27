@@ -2,7 +2,7 @@
 <project version="4">
   <component name="SshConfigs">
     <configs>
-      <sshConfig authType="PASSWORD" host="192.168.10.254" id="4fccfb1f-26ae-4a1c-9c63-735a72e6fc48" port="22" nameFormat="DESCRIPTIVE" username="ian" useOpenSSHConfig="true" />
+      <sshConfig authType="PASSWORD" host="ia-firefly2.home" id="4fccfb1f-26ae-4a1c-9c63-735a72e6fc48" port="22" nameFormat="DESCRIPTIVE" username="ian" useOpenSSHConfig="true" />
       <sshConfig authType="PASSWORD" host="cedartechnology.duckdns.org" id="4b52ff9d-e626-43f3-9cf5-3a5648a10e69" port="40022" nameFormat="DESCRIPTIVE" username="ian" useOpenSSHConfig="true" />
     </configs>
   </component>

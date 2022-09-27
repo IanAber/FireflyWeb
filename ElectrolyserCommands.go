@@ -12,6 +12,123 @@ import (
 	"time"
 )
 
+type Rate struct {
+	el0      uint8
+	el1      uint8
+	elSingle uint8
+}
+
+var RateArray = []Rate{{0, 0, 0},
+	{60, 0, 60},
+	{61, 0, 60},
+	{63, 0, 61},
+	{64, 0, 61},
+	{65, 0, 62},
+	{66, 0, 62},
+	{67, 0, 62},
+	{69, 0, 63},
+	{70, 0, 63},
+	{71, 0, 64},
+	{72, 0, 64},
+	{74, 0, 64},
+	{75, 0, 65},
+	{76, 0, 65},
+	{77, 0, 66},
+	{78, 0, 66},
+	{80, 0, 66},
+	{81, 0, 67},
+	{82, 0, 67},
+	{83, 0, 68},
+	{85, 0, 68},
+	{86, 0, 68},
+	{87, 0, 69},
+	{88, 0, 69},
+	{89, 0, 70},
+	{91, 0, 70},
+	{92, 0, 70},
+	{93, 0, 71},
+	{94, 0, 71},
+	{95, 0, 72},
+	{97, 0, 72},
+	{98, 0, 72},
+	{99, 0, 73},
+	{100, 0, 73},
+	{60, 61, 74},
+	{60, 62, 74},
+	{60, 63, 74},
+	{60, 64, 75},
+	{60, 65, 75},
+	{60, 67, 76},
+	{60, 68, 76},
+	{60, 69, 76},
+	{60, 70, 77},
+	{60, 72, 77},
+	{60, 73, 78},
+	{60, 74, 78},
+	{60, 75, 78},
+	{60, 76, 79},
+	{60, 78, 79},
+	{60, 79, 80},
+	{60, 80, 80},
+	{60, 81, 80},
+	{60, 83, 81},
+	{60, 84, 81},
+	{60, 85, 82},
+	{60, 86, 82},
+	{60, 87, 82},
+	{60, 89, 83},
+	{60, 90, 83},
+	{60, 91, 84},
+	{60, 92, 84},
+	{60, 94, 84},
+	{60, 95, 85},
+	{60, 96, 85},
+	{60, 97, 86},
+	{60, 98, 86},
+	{60, 100, 86},
+	{61, 100, 87},
+	{62, 100, 87},
+	{63, 100, 88},
+	{65, 100, 88},
+	{66, 100, 88},
+	{67, 100, 89},
+	{68, 100, 89},
+	{69, 100, 90},
+	{71, 100, 90},
+	{72, 100, 90},
+	{73, 100, 91},
+	{74, 100, 91},
+	{75, 100, 92},
+	{77, 100, 92},
+	{78, 100, 92},
+	{79, 100, 93},
+	{81, 100, 93},
+	{82, 100, 94},
+	{83, 100, 94},
+	{84, 100, 94},
+	{85, 100, 95},
+	{86, 100, 95},
+	{88, 100, 96},
+	{89, 100, 96},
+	{90, 100, 96},
+	{91, 100, 97},
+	{93, 100, 97},
+	{94, 100, 98},
+	{95, 100, 98},
+	{96, 100, 98},
+	{97, 100, 99},
+	{99, 100, 99},
+	{100, 100, 100}}
+
+var CurrentRate uint8
+
+func init() {
+	CurrentRate = 0
+}
+
+/*
+elCommand handles the On, Off, Start and Stop web commands to each electrolyser
+*/
 func elCommand(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Command string `json:"command"`
@@ -20,7 +137,6 @@ func elCommand(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	deviceStr := vars["device"]
-	var strCommand string
 
 	switch deviceStr {
 	case "0":
@@ -44,33 +160,37 @@ func elCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Command = strings.ToLower(body.Command)
 
+	var err error
 	switch body.Command {
 	case "on":
-		if body.device == 1 {
-			strCommand = "el2 on"
+
+		if body.device == 0 {
+			err = mbusRTU.EL0OnOff(true)
 		} else {
-			strCommand = "el1dr on"
+			err = mbusRTU.EL1OnOff(true)
 		}
-		if _, err := sendCommand(strCommand); err != nil {
+		if err != nil {
 			ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		}
 	case "off":
 		if body.device == 0 {
-			strCommand = "el1dr off"
-			if SystemStatus.Electrolysers[0].status.StackVoltage > jsonFloat32(params.ElectrolyserMaxStackVoltsTurnOff) {
-				ReturnJSONErrorString(w, "Electrolyser", "Electrolyser 0 not turned off because stack voltage is too high.", http.StatusBadRequest, true)
-				return
+			if len(SystemStatus.Electrolysers) > 0 {
+				if SystemStatus.Electrolysers[0].status.StackVoltage > jsonFloat32(params.ElectrolyserMaxStackVoltsTurnOff) {
+					ReturnJSONErrorString(w, "Electrolyser", "Electrolyser 0 not turned off because stack voltage is too high.", http.StatusBadRequest, true)
+					return
+				}
 			}
+			err = mbusRTU.EL0OnOff(false)
 		} else {
-			strCommand = "el2 off"
 			if len(SystemStatus.Electrolysers) > 1 {
 				if SystemStatus.Electrolysers[1].status.StackVoltage > jsonFloat32(params.ElectrolyserMaxStackVoltsTurnOff) {
 					ReturnJSONErrorString(w, "Electrolyser", "Electrolyser 1 not turned off because stack voltage is too high.", http.StatusBadRequest, true)
 					return
 				}
 			}
+			err = mbusRTU.EL1OnOff(false)
 		}
-		if _, err := sendCommand(strCommand); err != nil {
+		if err != nil {
 			ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 			return
 		}
@@ -101,32 +221,37 @@ func elCommand(w http.ResponseWriter, r *http.Request) {
 	returnJSONSuccess(w)
 }
 
-/**
-Set the given electrolyser to the given rate
+/*
+setElectrolyserPercentRate sets the given electrolyser to the given rate
 */
-func setElectrolyserRatePercent(rate uint8, device uint8) error {
+func setElectrolyserPercentRate(rate uint8, device uint8) error {
+	if uint8(len(SystemStatus.Electrolysers)) <= device {
+		return fmt.Errorf("Invalid electrolyser")
+	}
 	if SystemStatus.Electrolysers[device].status.SwitchedOn {
-		//if rate > 0 {
-		//	if SystemStatus.Electrolysers[device].status.ElState == ElIdle && (rate > 0) {
-		//		// State is idle so start it first if not in holdoff
-		//		if time.Now().After(SystemStatus.Electrolysers[device].OnOffTime.Add(ELECTROLYSERHOLDOFFTIME)) {
-		//			log.Println("Start electrolyser ", device)
-		//			SystemStatus.Electrolysers[device].Start(false)
-		//			SystemStatus.Electrolysers[device].OnOffTime = time.Now()
-		//		} else {
-		//			log.Println("Electrolyser ", device, " is in hold off so is not starting. Waiting until ", SystemStatus.Electrolysers[device].OnOffTime.Add(ELECTROLYSERHOLDOFFTIME).Format("15:04:05"))
-		//		}
-		//	}
-		//}
+		if rate > 0 {
+			if SystemStatus.Electrolysers[device].status.ElState == ElIdle && (rate > 0) {
+				// State is idle so start it first if not in holdoff
+				if time.Now().After(SystemStatus.Electrolysers[device].OnOffTime.Add(ELECTROLYSERHOLDOFFTIME)) {
+					log.Println("Start electrolyser ", device)
+					SystemStatus.Electrolysers[device].Start(false)
+					SystemStatus.Electrolysers[device].OnOffTime = time.Now()
+				} else {
+					log.Println("Electrolyser ", device, " is in hold off so is not starting. Waiting until ", SystemStatus.Electrolysers[device].OnOffTime.Add(ELECTROLYSERHOLDOFFTIME).Format("15:04:05"))
+				}
+			}
+		}
 		SystemStatus.Electrolysers[device].SetProduction(rate)
 	} else {
 		// Not switched on so if we are setting to more than 0 fire it up as long as we are below the restart pressure
 		if SystemStatus.Gas.TankPressure < ELECTROLYSERRESTARTPRESSURE && rate > 0 {
-			strCommand := "el1dr on"
-			if device == 1 {
-				strCommand = "el2 on"
+			var err error
+			if device == 0 {
+				err = mbusRTU.EL0OnOff(true)
+			} else {
+				err = mbusRTU.EL1OnOff(true)
 			}
-			if _, err := sendCommand(strCommand); err != nil {
+			if err != nil {
 				log.Print(err)
 			}
 		}
@@ -134,8 +259,8 @@ func setElectrolyserRatePercent(rate uint8, device uint8) error {
 	return nil
 }
 
-/**
-Tell the given electrolyser to preheat the electrolyte
+/*
+preheatElectrolyser tells the given electrolyser to preheat the electrolyte
 */
 func preheatElectrolyser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -144,18 +269,18 @@ func preheatElectrolyser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Failed to get the device. - ", err)
 	}
-	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+	if err := validateDevice(uint8(deviceNum)); err != nil {
 		log.Println("Invalid device requeted in preheat - ", err)
 	}
 
-	SystemStatus.Electrolysers[deviceNum-1].Preheat()
+	SystemStatus.Electrolysers[deviceNum].Preheat()
 	if _, err := fmt.Fprintf(w, "Electrolyser %d preheat requested", deviceNum); err != nil {
 		log.Println("Error returning status after electrolyser preheat request. - ", err)
 	}
 }
 
-/**
-Tell all electrolysers to preheat the electrolyte
+/*
+preheatAllElectrolysers tells all electrolysers to preheat the electrolyte
 */
 func preheatAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	for _, el := range SystemStatus.Electrolysers {
@@ -166,8 +291,8 @@ func preheatAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-/**
-Start the given electrolyser
+/*
+startElectrolyser starts the given electrolyser
 */
 func startElectrolyser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -176,19 +301,19 @@ func startElectrolyser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Failed to get the device. - ", err)
 	}
-	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+	if err := validateDevice(uint8(deviceNum)); err != nil {
 		log.Println("Invalid device requeted in selElOn - ", err)
 	}
 
 	// Start immediately
-	SystemStatus.Electrolysers[deviceNum-1].Start(true)
+	SystemStatus.Electrolysers[deviceNum].Start(true)
 	if _, err := fmt.Fprintf(w, "Electrolyser start requested"); err != nil {
 		log.Println("Error returning status after electrolyser start request. - ", err)
 	}
 }
 
-/**
-Start all electrolysers
+/*
+startAllElectrolysers starts all electrolysers
 */
 func startAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	for _, el := range SystemStatus.Electrolysers {
@@ -200,8 +325,8 @@ func startAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-/**
-Stop the given electrolyser immediately
+/*
+stopElectrolyser stops the given electrolyser immediately
 */
 func stopElectrolyser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -211,17 +336,17 @@ func stopElectrolyser(w http.ResponseWriter, r *http.Request) {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusBadRequest, true)
 		return
 	}
-	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+	if err := validateDevice(uint8(deviceNum)); err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusBadRequest, true)
 		return
 	}
 
-	SystemStatus.Electrolysers[deviceNum-1].Stop(true)
+	SystemStatus.Electrolysers[deviceNum].Stop(true)
 	returnJSONSuccess(w)
 }
 
-/**
-Stop all electrolysers
+/*
+stopAllElectrolysers stops all electrolysers
 */
 func stopAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	for _, el := range SystemStatus.Electrolysers {
@@ -233,8 +358,8 @@ func stopAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-/**
-Reboot the given electrolyser
+/*
+rebootElectrolyser reboots the given electrolyser
 */
 func rebootElectrolyser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -243,15 +368,15 @@ func rebootElectrolyser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Failed to get the device. - ", err)
 	}
-	if err := validateDevice(uint8(deviceNum) - 1); err != nil {
+	if err := validateDevice(uint8(deviceNum)); err != nil {
 		log.Println("Invalid device requeted in selElOn - ", err)
 	}
-	SystemStatus.Electrolysers[deviceNum-1].Reboot()
+	SystemStatus.Electrolysers[deviceNum].Reboot()
 	returnJSONSuccess(w)
 }
 
-/**
-Set a reboot command to all electrolysers
+/*
+rebootAllElectrolysers sends a reboot command to all electrolysers
 */
 func rebootAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	for _, el := range SystemStatus.Electrolysers {
@@ -260,132 +385,36 @@ func rebootAllElectrolysers(w http.ResponseWriter, _ *http.Request) {
 	returnJSONSuccess(w)
 }
 
-type Rate struct {
-	el0 uint8
-	el1 uint8
-}
-
-var percentToRate = []Rate{
-	{0, 0},   //0
-	{60, 0},  //1
-	{61, 0},  //2
-	{62, 0},  //3
-	{63, 0},  //4
-	{64, 0},  //5
-	{65, 0},  //6
-	{66, 0},  //7
-	{67, 0},  //8
-	{69, 0},  //9
-	{70, 0},  //10
-	{71, 0},  //11
-	{72, 0},  //12
-	{74, 0},  //13
-	{75, 0},  //14
-	{76, 0},  //15
-	{77, 0},  //16
-	{78, 0},  //17
-	{80, 0},  //18
-	{81, 0},  //19
-	{82, 0},  //20
-	{83, 0},  //21
-	{84, 0},  //22
-	{85, 0},  //23
-	{86, 0},  //24
-	{87, 0},  //25
-	{88, 0},  //26
-	{89, 0},  //27
-	{90, 0},  //28
-	{91, 0},  //29
-	{92, 0},  //30
-	{93, 0},  //31
-	{94, 0},  //32
-	{95, 0},  //33
-	{96, 0},  //34
-	{97, 0},  //35
-	{60, 60}, //36
-	{61, 60}, //37
-	{62, 60}, //38
-	{63, 60}, //39
-	{64, 60}, //40
-	{66, 60}, //41
-	{68, 60}, //42
-	{69, 60}, //43
-	{71, 60}, //44
-	{72, 60}, //45
-	{73, 60}, //46
-	{74, 60}, //47
-	{75, 60}, //48
-	{76, 60}, //49
-	{78, 60}, //50
-	{79, 60}, //51
-	{80, 60}, //52
-	{81, 60}, //53
-	{83, 60}, //54
-	{84, 60}, //55
-	{85, 60}, //56
-	{86, 60}, //57
-	{87, 60}, //58
-	{80, 60}, //59
-	{89, 60}, //60
-	{90, 60}, //61
-	{91, 60}, //62
-	{92, 60}, //63
-	{93, 60}, //64
-	{94, 60}, //65
-	{95, 60}, //66
-	{96, 60}, //67
-	{97, 61}, //68
-	{97, 62}, //69
-	{97, 63}, //70
-	{97, 64}, //71
-	{97, 65}, //72
-	{97, 66}, //73
-	{97, 67}, //74
-	{97, 69}, //75
-	{97, 70}, //76
-	{97, 71}, //77
-	{97, 72}, //78
-	{97, 73}, //79
-	{97, 75}, //80
-	{97, 76}, //81
-	{97, 77}, //82
-	{97, 79}, //83
-	{97, 80}, //84
-	{97, 81}, //85
-	{97, 82}, //86
-	{97, 83}, //87
-	{97, 85}, //88
-	{97, 86}, //89
-	{97, 87}, //90
-	{97, 88}, //91
-	{97, 89}, //92
-	{97, 90}, //93
-	{97, 91}, //94
-	{97, 92}, //95
-	{97, 93}, //96
-	{97, 94}, //97
-	{97, 95}, //98
-	{97, 96}, //99
-	{97, 97}, //100
-}
-
-/**
-Translate the given percentage total rates to values suitable for two electrolysers
-by looking them up in a MAP
+/*
+setProductionRates sets all electrolysers to the selected rate.
 */
-func getRates(rate int8) Rate {
-
-	return percentToRate[rate]
-	//for k, v := range RateMap {
-	//	if v == rate {
-	//		return uint8(k % 1000), uint8(k / 1000)
-	//	}
-	//}
-	//return 0, 0
+func setProductionRates(rate uint8) error {
+	CurrentRate = rate
+	var elRates Rate
+	if len(SystemStatus.Electrolysers) > 1 {
+		elRates = RateArray[rate]
+	} else {
+		elRates.el0 = 0
+		elRates.el1 = 0
+		if rate == 0 {
+			elRates.el0 = 0
+		} else {
+			elRates.el0 = uint8((rate*4)/10) + 60
+		}
+	}
+	if err := setElectrolyserPercentRate(elRates.el0, 0); err != nil {
+		return err
+	}
+	if len(SystemStatus.Electrolysers) > 1 {
+		if err := setElectrolyserPercentRate(elRates.el1, 1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 /**
-set the electrolyser rate.
+set the electrolyser selected rate.
 */
 func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 	var responseJson struct {
@@ -421,55 +450,24 @@ func setElectrolyserRate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if (SystemStatus.Relays.FuelCell1Run || SystemStatus.Relays.FuelCell2Run) && jRate.Rate > 0 {
+	if (SystemStatus.Relays.FC0Run || SystemStatus.Relays.FC1Run) && jRate.Rate > 0 {
 		// Do not allow the electrolysers to run if one or more fuel cells are also running
 		jRate.Rate = 0
 
 		for _, el := range SystemStatus.Electrolysers {
 			// Immediate shut down
 			el.Stop(true)
+			CurrentRate = 0
 		}
 		ReturnJSONErrorString(w, "Electrolyser", "One or more Fuel cells are running. All electrolysers are stopped.", http.StatusBadRequest, false)
 		return
 	}
 
-	debugPrint("Set electrolyser rate to %d%%", jRate.Rate)
-
-	var elRates Rate
-	if len(SystemStatus.Electrolysers) > 1 {
-		elRates = getRates(int8(jRate.Rate))
-	} else {
-		elRates.el0 = 0
-		elRates.el1 = 0
-		if jRate.Rate == 0 {
-			elRates.el0 = 0
-		} else {
-			elRates.el0 = uint8((jRate.Rate*4)/10) + 60
-		}
-	}
-
-	debugPrint("set electrolyser 0 to %d%%", elRates.el0)
-
-	err = setElectrolyserRatePercent(elRates.el0, 0)
-	if err != nil {
+	if err := setProductionRates(uint8(jRate.Rate)); err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		return
 	}
-	if len(SystemStatus.Electrolysers) > 1 {
-		debugPrint("set electrolyser 1 to ", elRates.el1)
-		err = setElectrolyserRatePercent(elRates.el1, 1)
-		if err != nil {
-			ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
-			return
-		}
-	}
-	if responseBytes, err := json.Marshal(responseJson); err != nil {
-		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
-	} else {
-		if _, err = fmt.Fprintf(w, string(responseBytes)); err != nil {
-			log.Println(err)
-		}
-	}
+	returnJSONSuccess(w)
 }
 
 /**
@@ -477,62 +475,51 @@ Return the total electrolyser rate as a percentage, 0-100%
 */
 func getElectrolyserRate(w http.ResponseWriter, _ *http.Request) {
 
-	var el1, el2 int
 	var jReturnData struct {
-		Rate   int8    `json:"rate"`
+		Rate   uint8   `json:"rate"`
 		Gas    float64 `json:"gas"`
 		Status string  `json:"status"`
 	}
 
 	// Set the gas pressure
 	jReturnData.Gas = SystemStatus.Gas.TankPressure
+	jReturnData.Rate = CurrentRate
 
-	// Loop through and find if the electrolysers are on
-	ElectrolysersSwitchedOn := len(SystemStatus.Electrolysers) > 0
+	// Perhaps we should ensure that the electrolysers are where we are saying they are.
+	//	debugPrint("Forcing rates in GetRate command")
+	if err := setProductionRates(CurrentRate); err != nil {
+		log.Println(err)
+	}
+
+	// Loop through and find if any of the electrolysers are on
+	ElectrolysersSwitchedOn := false
 	for _, e := range SystemStatus.Electrolysers {
-		if !e.IsSwitchedOn() {
-			// If anyone is switche off then assume all are off
-			ElectrolysersSwitchedOn = false
+		if e.IsSwitchedOn() {
+			// If anyone is switched off then assume all are off
+			ElectrolysersSwitchedOn = true
 		}
 	}
 	if ElectrolysersSwitchedOn {
-		// If all electrolysers are on get the production settings
+		// If any electrolysers are on get the production settings
 		if len(SystemStatus.Electrolysers) == 1 {
 			// We only have one electrolyser so this is easy
 			switch SystemStatus.Electrolysers[0].status.ElState {
 			case ElIdle:
 				jReturnData.Status = "Idle"
-				jReturnData.Rate = 0
 			case ElStandby:
 				jReturnData.Status = "Standby"
-				jReturnData.Rate = 0
 			default:
 				jReturnData.Status = "Active"
-				r := SystemStatus.Electrolysers[0].GetRate()
-				if r > 0 {
-					jReturnData.Rate = int8(((r - 60) * 100) / 40)
-					if jReturnData.Rate < 1 {
-						jReturnData.Rate = 1
-					}
-					if jReturnData.Rate > 100 {
-						jReturnData.Rate = 100
-					}
-				} else {
-					jReturnData.Rate = 0
-				}
 			}
 		} else {
-			// We have two electrolysers, so we need to work out the rate using the mapping table
+			// We have two electrolysers, so we need to figure out what to send as the status
 			switch SystemStatus.Electrolysers[0].status.ElState {
 			case ElIdle:
 				jReturnData.Status = "Idle"
-				el1 = 0
 			case ElStandby:
 				jReturnData.Status = "Standby"
-				el1 = 0
 			default:
 				jReturnData.Status = "Active"
-				el1 = int(SystemStatus.Electrolysers[0].GetRate())
 			}
 
 			switch SystemStatus.Electrolysers[1].status.ElState {
@@ -540,28 +527,19 @@ func getElectrolyserRate(w http.ResponseWriter, _ *http.Request) {
 				if jReturnData.Status != "Standby" {
 					jReturnData.Status = "Idle"
 				}
-				el2 = 0
 			case ElStandby:
 				jReturnData.Status = "Standby"
-				el2 = 0
 			default:
 				if jReturnData.Status != "Standby" {
 					jReturnData.Status = "Idle"
 				}
 				jReturnData.Status = "Active"
-				el2 = int(SystemStatus.Electrolysers[1].GetRate())
 			}
-			if el1 > 96 {
-				el1 = 100
-			}
-			if el2 > 96 {
-				el2 = 100
-			}
-			jReturnData.Rate = RateMap[(el2*1000)+el1]
 		}
 	} else {
-		// One or more electrolysers are off, so we report as OFF.
-		jReturnData.Rate = -1
+		// all electrolysers are off, so we report as OFF.
+		jReturnData.Rate = 0
+		CurrentRate = 0
 		jReturnData.Status = "OFF"
 	}
 
@@ -594,70 +572,20 @@ func setRestartPressure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if (device < 1) || (device > int64(len(SystemStatus.Electrolysers))) {
-		ReturnJSONErrorString(w, "Electrolyser", "Invalid device specified", http.StatusBadRequest, true)
-		return
+	if err := validateDevice(uint8(device)); err != nil {
+		log.Println("Invalid device requeted in setRestartPressure - ", err)
 	}
 	if (pressure < 2.0) || (pressure > 35.0) {
 		ReturnJSONErrorString(w, "Electrolyser", "Invalid pressure specified (2..35)", http.StatusBadRequest, true)
 		return
 	}
 
-	err = SystemStatus.Electrolysers[device-1].SetRestartPressure(float32(pressure))
+	err = SystemStatus.Electrolysers[device].SetRestartPressure(float32(pressure))
 	if err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		return
 	}
 	returnJSONSuccess(w)
-}
-
-/**
-Returns a form allowing manual setting of the electrolyser rate
-*/
-func showRateSetter(w http.ResponseWriter, _ *http.Request) {
-	_, err := fmt.Fprint(w, `<html>
-	<head>
-		<title>Set Electrolyser Rate</title>
-		<script type="text/javascript">
-function postVal(){ 
-            // Creating a XHR object
-            let xhr = new XMLHttpRequest();
-            let url = "/el/setrate";
-       
-            // open a connection
-            xhr.open("POST", url, true);
- 
-            // Set the request header i.e. which type of content we are sending
-            xhr.setRequestHeader("Content-Type", "application/json");
- 
-            // Create a state change callback
-            xhr.onreadystatechange = function () {
-                if (xhr.readyState === 4 && xhr.status === 200) {
- 
-                    // Print received data from server
-                    result.innerHTML = this.responseText;
- 
-                }
-            };
- 
-            // Converting JSON data to string
-            var data = JSON.stringify({ "rate": parseInt(document.getElementById("rate").value) });
- 
-            // Sending data with the request
-            xhr.send(data);
-        }
-		</script>
-	</head>
-	<body>
-		<div>
-			<label for="rate">Rate</label><input id="rate" name="rate" type="number" min="0" max="100" step="1" value="0" /><br />
-			<input type="button" onclick="postVal()" value="Submit" />
-		</div>
-	</body>
-</html>`)
-	if err != nil {
-		log.Println("Failed to send the reate setter form -", err)
-	}
 }
 
 func getElectrolyserDetail(w http.ResponseWriter, r *http.Request) {
@@ -696,16 +624,16 @@ func getElectrolyserDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	var sSQL string
 	if el == 0 {
+		sSQL = `SELECT MIN(UNIX_TIMESTAMP(logged)) AS logged, AVG(el0Rate) AS rate, LAST_VALUE(el0ElectrolyteLevel) AS electrolyteLevel, AVG(el0ElectrolyteTemp) AS electrolyteTemp, AVG(el0H2Flow) AS flow, 
+AVG(el0H2InnerPressure) AS h2InnerPressure, AVG(el0H2OuterPressure) AS h2OuterPressure, AVG(el0StackVoltage) AS stackVoltage, AVG(el0WaterPressure) AS waterPressure, AVG(el0StackCurrent) AS stackCurrent
+FROM firefly.logging
+WHERE el0Rate is not null AND logged BETWEEN ? AND ?
+GROUP BY UNIX_TIMESTAMP(logged) DIV ?;`
+	} else {
 		sSQL = `SELECT MIN(UNIX_TIMESTAMP(logged)) AS logged, AVG(el1Rate) AS rate, LAST_VALUE(el1ElectrolyteLevel) AS electrolyteLevel, AVG(el1ElectrolyteTemp) AS electrolyteTemp, AVG(el1H2Flow) AS flow, 
 AVG(el1H2InnerPressure) AS h2InnerPressure, AVG(el1H2OuterPressure) AS h2OuterPressure, AVG(el1StackVoltage) AS stackVoltage, AVG(el1WaterPressure) AS waterPressure, AVG(el1StackCurrent) AS stackCurrent
 FROM firefly.logging
 WHERE el1Rate is not null AND logged BETWEEN ? AND ?
-GROUP BY UNIX_TIMESTAMP(logged) DIV ?;`
-	} else {
-		sSQL = `SELECT MIN(UNIX_TIMESTAMP(logged)) AS logged, AVG(el2Rate) AS rate, LAST_VALUE(el2ElectrolyteLevel) AS electrolyteLevel, AVG(el2ElectrolyteTemp) AS electrolyteTemp, AVG(el2H2Flow) AS flow, 
-AVG(el2H2InnerPressure) AS h2InnerPressure, AVG(el2H2OuterPressure) AS h2OuterPressure, AVG(el2StackVoltage) AS stackVoltage, AVG(el2WaterPressure) AS waterPressure, AVG(el2StackCurrent) AS stackCurrent
-FROM firefly.logging
-WHERE el2Rate is not null AND logged BETWEEN ? AND ?
 GROUP BY UNIX_TIMESTAMP(logged) DIV ?;`
 	}
 
@@ -759,8 +687,11 @@ GROUP BY UNIX_TIMESTAMP(logged) DIV ?;`
 	}
 }
 
+/**
+validateDevice ensures that the device represents a known electrolyser. Device is 0 based
+*/
 func validateDevice(device uint8) error {
-	if device >= uint8(systemConfig.NumEl) {
+	if device >= uint8(len(SystemStatus.Electrolysers)) {
 		return fmt.Errorf("invalid Electrolyser device - %d", device)
 	}
 	return nil
@@ -768,7 +699,7 @@ func validateDevice(device uint8) error {
 
 func getElectrolyserHtmlStatus(El *Electrolyser) (html string) {
 	// Check the relay status to ensure power is being provided to the electrolyser
-	if (El.status.Device == 0 && !SystemStatus.Relays.Electrolyser1) || (El.status.Device == 1 && !SystemStatus.Relays.Electrolyser2) {
+	if (El.status.Device == 0 && !SystemStatus.Relays.EL0) || (El.status.Device == 1 && !SystemStatus.Relays.EL1) {
 		html = `<h3 style="text-align:center">Electrolyser is switched OFF</h3`
 		return
 	}
@@ -790,7 +721,7 @@ func getElectrolyserHtmlStatus(El *Electrolyser) (html string) {
 
 func getDryerHtmlStatus(El *Electrolyser) (html string) {
 	// Check the relay status to ensure power is being provided to the electrolyser
-	if (El.status.Device == 0 && !SystemStatus.Relays.Electrolyser1) || (El.status.Device == 1 && !SystemStatus.Relays.Electrolyser2) {
+	if El.status.Device == 0 && !SystemStatus.Relays.EL0 {
 		html = `<h3 style="text-align:center">Electrolyser/Dryer is switched OFF</h3`
 		return
 	}
@@ -815,14 +746,17 @@ func getElectrolyserJsonStatus(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	device, err := strconv.ParseInt(vars["device"], 10, 8)
-	if (err != nil) || (device > 1) || (device < 0) {
+	if err == nil {
+		err = validateDevice(uint8(device))
+	}
+	if err != nil {
 		log.Print("Invalid electrolyser in status request")
 		getStatus(w, r)
 		return
 	}
-	bytesArray, err := json.Marshal(SystemStatus.Electrolysers[device].status)
+	bytesArray, err := json.Marshal(&SystemStatus.Electrolysers[device].status)
 	if err != nil {
-		log.Println(SystemStatus.Electrolysers[device].status)
+		log.Println(&SystemStatus.Electrolysers[device].status)
 		if _, err := fmt.Fprint(w, errorToJson(err)); err != nil {
 			log.Print(err)
 		}
@@ -846,40 +780,34 @@ Get electrolyser recorded values
 */
 func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	type Row struct {
-		Logged            string
-		EL1Rate           float64
-		EL1Temp           float64
-		EL1State          int64
-		EL1H2Flow         float64
-		EL1InnerPressure  float64
-		EL1OuterPressure  float64
-		EL1StackVoltage   float64
-		EL1StackCurrent   float64
-		EL1SystemState    int64
-		EL1WaterPressure  float64
-		DR1Temp0          float64
-		DR1Temp1          float64
-		DR1Temp2          float64
-		DR1Temp3          float64
-		DR1InputPressure  float64
-		DR1OutputPressure float64
-		EL2Rate           float64
-		EL2Temp           float64
-		EL2State          int64
-		EL2H2Flow         float64
-		EL2InnerPressure  float64
-		EL2OuterPressure  float64
-		EL2StackVoltage   float64
-		EL2StackCurrent   float64
-		EL2SystemState    int64
-		EL2WaterPressure  float64
-		DR2Temp0          float64
-		DR2Temp1          float64
-		DR2Temp2          float64
-		DR2Temp3          float64
-		DR2InputPressure  float64
-		DR2OutputPressure float64
-		H2Pressure        float64
+		Logged           string  `json:"logged"`
+		El0Rate          float64 `json:"el0Rate"`
+		El0Temp          float64 `json:"el0Temp"`
+		El0State         int64   `json:"el0State"`
+		El0H2Flow        float64 `json:"el0H2Flow"`
+		El0InnerPressure float64 `json:"el0InnerPressure"`
+		El0OuterPressure float64 `json:"el0OuterPressure"`
+		El0StackVoltage  float64 `json:"el0StackVoltage"`
+		El0StackCurrent  float64 `json:"El0StackCurrent"`
+		El0SystemState   int64   `json:"el0SystemState"`
+		El0WaterPressure float64 `json:"el0WaterPressure"`
+		DRTemp0          float64 `json:"dryerTemp0"`
+		DRTemp1          float64 `json:"dryerTemp1"`
+		DRTemp2          float64 `json:"dryerTemp2"`
+		DRTemp3          float64 `json:"dryerTemp3"`
+		DRInputPressure  float64 `json:"dryerIputPressure"`
+		DROutputPressure float64 `json:"dryerOutputPressure"`
+		El1Rate          float64 `json:"el1Rate"`
+		El1Temp          float64 `json:"el1Temp"`
+		El1State         int64   `json:"el1State"`
+		El1H2Flow        float64 `json:"el1H2Flow"`
+		El1InnerPressure float64 `json:"el1InnerPressure"`
+		El1OuterPressure float64 `json:"el1OuterPressure"`
+		El1StackVoltage  float64 `json:"el1StackVoltage"`
+		El1StackCurrent  float64 `json:"el1StackCurrent"`
+		El1SystemState   int64   `json:"el1SystemState"`
+		El1WaterPressure float64 `json:"el1WaterPressure"`
+		H2Pressure       float64 `json:"h2Pressure"`
 	}
 
 	var results []*Row
@@ -889,13 +817,13 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	from := vars["from"]
 	to := vars["to"]
-	rows, err := pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(AVG(el1Rate) ,0), IFNULL(AVG(el1ElectrolyteTemp) ,0), IFNULL(MAX(el1StateCode) ,0), IFNULL(AVG(el1H2Flow), 0), IFNULL(AVG(el1H2InnerPressure), 0),
-		IFNULL(AVG(el1H2OuterPressure), 0), IFNULL(AVG(el1StackVoltage), 0), IFNULL(AVG(el1StackCurrent), 0), IFNULL(MAX(el1SystemStateCode), 0), IFNULL(AVG(el1WaterPressure), 0),
-		IFNULL(AVG(dr1Temp0), 0), IFNULL(AVG(dr1Temp1), 0), IFNULL(AVG(dr1Temp2), 0), IFNULL(AVG(dr1Temp3), 0), IFNULL(AVG(dr1InputPressure), 0), IFNULL(AVG(dr1OutputPressure), 0),
-		IFNULL(AVG(el2Rate), 0), IFNULL(AVG(el2ElectrolyteTemp), 0), IFNULL(MAX(el2StateCode), 0), IFNULL(AVG(el2H2Flow), 0), IFNULL(AVG(el2H2InnerPressure), 0),
-		IFNULL(AVG(el2H2OuterPressure), 0), IFNULL(AVG(el2StackVoltage), 0), IFNULL(AVG(el2StackCurrent), 0), IFNULL(MAX(el2SystemStateCode), 0), IFNULL(AVG(el2WaterPressure), 0),
-		IFNULL(AVG(dr2Temp0), 0), IFNULL(AVG(dr2Temp1), 0), IFNULL(AVG(dr2Temp2), 0), IFNULL(AVG(dr2Temp3), 0), IFNULL(AVG(dr2InputPressure), 0), IFNULL(AVG(dr2OutputPressure), 0),
-		IFNULL(AVG(gasTankPressure), 0)
+
+	rows, err := pDB.Query(`SELECT (UNIX_TIMESTAMP(logged) DIV 60) * 60, IFNULL(ROUND(AVG(el0Rate)/10,1) ,0), IFNULL(ROUND(AVG(el0ElectrolyteTemp)/10,1) ,0), IFNULL(MAX(el0StateCode) ,0), IFNULL(ROUND(AVG(el0H2Flow)/10,1), 0), IFNULL(ROUND(AVG(el0H2InnerPressure)/10,1), 0),
+		IFNULL(ROUND(AVG(el0H2OuterPressure)/10,1), 0), IFNULL(ROUND(AVG(el0StackVoltage)/10,1), 0), IFNULL(ROUND(AVG(el0StackCurrent)/10,1), 0), IFNULL(MAX(el0SystemStateCode), 0), IFNULL(ROUND(AVG(el0WaterPressure)/10,1), 0),
+		IFNULL(ROUND(AVG(drTemp0)/10,1), 0), IFNULL(ROUND(AVG(drTemp1)/10,1), 0), IFNULL(ROUND(AVG(drTemp2)/10,1), 0), IFNULL(ROUND(AVG(drTemp3)/10,1), 0), IFNULL(ROUND(AVG(drInputPressure)/10,1), 0), IFNULL(ROUND(AVG(drOutputPressure)/10,1), 0),
+		IFNULL(ROUND(AVG(el1Rate)/10,1), 0), IFNULL(ROUND(AVG(el1ElectrolyteTemp)/10,1), 0), IFNULL(MAX(el1StateCode), 0), IFNULL(ROUND(AVG(el1H2Flow)/10,1), 0), IFNULL(ROUND(AVG(el1H2InnerPressure)/10,1), 0),
+		IFNULL(ROUND(AVG(el1H2OuterPressure)/10,1), 0), IFNULL(ROUND(AVG(el1StackVoltage)/10,1), 0), IFNULL(ROUND(AVG(el1StackCurrent)/10,1), 0), IFNULL(MAX(el1SystemStateCode), 0), IFNULL(ROUND(AVG(el1WaterPressure)/10,1), 0),
+		IFNULL(ROUND(AVG(gasTankPressure)/10,1), 0)
 	  FROM firefly.logging
 	  WHERE logged BETWEEN ? and ?
 	  GROUP BY UNIX_TIMESTAMP(logged) DIV 60`, from, to)
@@ -912,11 +840,11 @@ func getElectrolyserHistory(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		row := new(Row)
 		if err := rows.Scan(&(row.Logged),
-			&(row.EL1Rate), &(row.EL1Temp), &(row.EL1State), &(row.EL1H2Flow), &(row.EL1InnerPressure), &(row.EL1OuterPressure), &(row.EL1StackVoltage), &(row.EL1StackCurrent), &(row.EL1SystemState), &(row.EL1WaterPressure),
-			&(row.DR1Temp0), &(row.DR1Temp1), &(row.DR1Temp2), &(row.DR1Temp3), &(row.DR1InputPressure), &(row.DR1OutputPressure),
-			&(row.EL2Rate), &(row.EL2Temp), &(row.EL2State), &(row.EL2H2Flow), &(row.EL2InnerPressure), &(row.EL2OuterPressure), &(row.EL2StackVoltage), &(row.EL2StackCurrent), &(row.EL2SystemState), &(row.EL2WaterPressure),
-			&(row.DR2Temp0), &(row.DR2Temp1), &(row.DR2Temp2), &(row.DR2Temp3), &(row.DR2InputPressure), &(row.DR2OutputPressure),
+			&(row.El0Rate), &(row.El0Temp), &(row.El0State), &(row.El0H2Flow), &(row.El0InnerPressure), &(row.El0OuterPressure), &(row.El0StackVoltage), &(row.El0StackCurrent), &(row.El0SystemState), &(row.El0WaterPressure),
+			&(row.DRTemp0), &(row.DRTemp1), &(row.DRTemp2), &(row.DRTemp3), &(row.DRInputPressure), &(row.DROutputPressure),
+			&(row.El1Rate), &(row.El1Temp), &(row.El1State), &(row.El1H2Flow), &(row.El1InnerPressure), &(row.El1OuterPressure), &(row.El1StackVoltage), &(row.El1StackCurrent), &(row.El1SystemState), &(row.El1WaterPressure),
 			&(row.H2Pressure)); err != nil {
+
 			log.Print(err)
 		} else {
 			results = append(results, row)
@@ -938,12 +866,12 @@ Turn all electrolysers off
 */
 func setAllElOff(w http.ResponseWriter, _ *http.Request) {
 	//	log.Println("Setting all electrolysers off")
-	_, err := sendCommand("el2 off")
+	err := mbusRTU.EL1OnOff(false)
 	if err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		return
 	}
-	_, err = sendCommand("el1dr off")
+	err = mbusRTU.EL0OnOff(false)
 	if err != nil {
 		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		return
@@ -958,10 +886,8 @@ func setElOff(w http.ResponseWriter, r *http.Request) {
 	var jErr JSONError
 	vars := mux.Vars(r)
 	device := vars["device"]
-	var strCommand string
 	switch device {
 	case "0":
-		strCommand = "el1dr off"
 		if SystemStatus.Electrolysers[0].status.StackVoltage > 30 {
 			log.Println("Electrolyser 1 not turned off because stack voltage is too high.")
 			var jErr JSONError
@@ -969,8 +895,11 @@ func setElOff(w http.ResponseWriter, r *http.Request) {
 			jErr.ReturnError(w, 400)
 			return
 		}
+		if err := mbusRTU.EL0OnOff(false); err != nil {
+			ReturnJSONError(w, "Electrolyser-0", err, http.StatusInternalServerError, true)
+			return
+		}
 	case "1":
-		strCommand = "el2 off"
 		if len(SystemStatus.Electrolysers) > 1 {
 			if SystemStatus.Electrolysers[1].status.StackVoltage > 30 {
 				log.Println(jErr.AddErrorString("Electrolyser", "Electrolyser 2 not turned off because stack voltage is too high."))
@@ -978,15 +907,12 @@ func setElOff(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if err := mbusRTU.EL1OnOff(false); err != nil {
+			ReturnJSONError(w, "Electrolyser-1", err, http.StatusInternalServerError, true)
+			return
+		}
 	default:
-		log.Println(jErr.AddErrorString("Electrolyser", fmt.Sprintf("Invalid electrolyser specified - ", device)))
-		jErr.ReturnError(w, 400)
-		return
-	}
-	_, err := sendCommand(strCommand)
-	if err != nil {
-		log.Println(jErr.AddError("Electrolyser", err))
-		jErr.ReturnError(w, 500)
+		ReturnJSONErrorString(w, "Electrolyser", fmt.Sprintf("Invalid electrolyser specified - %s", device), http.StatusBadRequest, false)
 		return
 	}
 	returnJSONSuccess(w)
@@ -996,10 +922,8 @@ func setElOff(w http.ResponseWriter, r *http.Request) {
 Turn the given electrolyser on
 */
 func setElOn(w http.ResponseWriter, r *http.Request) {
-	var jErr JSONError
 	vars := mux.Vars(r)
 	device := vars["device"]
-	var strCommand string
 	deviceNum, err := strconv.ParseInt(device, 10, 8)
 	if err != nil {
 		log.Println("Failed to get the device. - ", err)
@@ -1009,18 +933,15 @@ func setElOn(w http.ResponseWriter, r *http.Request) {
 	}
 	switch deviceNum {
 	case 1:
-		strCommand = "el1dr on"
+		err = mbusRTU.EL0OnOff(true)
 	case 2:
-		strCommand = "el2 on"
+		err = mbusRTU.EL1OnOff(true)
 	default:
-		log.Print("Invalid electrolyser specified - ", device)
-		getStatus(w, r)
+		ReturnJSONErrorString(w, "Electrolyser", "Invalid electrolyser specified", http.StatusBadRequest, false)
 		return
 	}
-	_, err = sendCommand(strCommand)
 	if err != nil {
-		log.Println(jErr.AddError("Electrolyser", err))
-		jErr.ReturnError(w, 500)
+		ReturnJSONError(w, "Electrolyser", err, http.StatusInternalServerError, true)
 		return
 	}
 	returnJSONSuccess(w)
@@ -1030,17 +951,21 @@ func setElOn(w http.ResponseWriter, r *http.Request) {
 Turn all electrolysers on
 */
 func setAllElOn(w http.ResponseWriter, _ *http.Request) {
-	var jErr JSONError
-	_, err := sendCommand("el1dr on")
-	if err != nil {
-		log.Print(jErr.AddError("Electrolyser", err))
-		jErr.ReturnError(w, 500)
+
+	if err := mbusRTU.EL0OnOff(true); err != nil {
+		ReturnJSONError(w, "Electrolyser-0", err, http.StatusInternalServerError, true)
 		return
 	}
-	_, err = sendCommand("el2 on")
-	if err != nil {
-		log.Print(jErr.AddError("Electrolyser", err))
-		jErr.ReturnError(w, 500)
+	if err := mbusRTU.EL1OnOff(true); err != nil {
+		ReturnJSONError(w, "Electrolyser-1", err, http.StatusInternalServerError, true)
+		return
+	}
+	returnJSONSuccess(w)
+}
+
+func rebootDryer(w http.ResponseWriter, _ *http.Request) {
+	if err := SystemStatus.Electrolysers[0].RebootDryer(); err != nil {
+		ReturnJSONError(w, "Dryer", err, http.StatusInternalServerError, true)
 		return
 	}
 	returnJSONSuccess(w)

@@ -145,6 +145,18 @@
                                 .then(function(data) {
                                     if (data.NumElectrolyser > 0) {
                                         if (data.Relays.Electrolyser1) {
+                                            $('#el0On').hide();
+                                            $('#el0Off').show();
+                                        } else {
+                                            $('#el0On').show();
+                                            $('#el0Off').hide();
+                                        }
+                                    } else {
+                                        $('#el0On').hide();
+                                        $('#el0Off').hide();
+                                    }
+                                    if (data.NumElectrolyser > 1) {
+                                        if (data.Relays.Electrolyser2) {
                                             $('#el1On').hide();
                                             $('#el1Off').show();
                                         } else {
@@ -155,20 +167,30 @@
                                         $('#el1On').hide();
                                         $('#el1Off').hide();
                                     }
-                                    if (data.NumElectrolyser > 1) {
-                                        if (data.Relays.Electrolyser2) {
-                                            $('#el2On').hide();
-                                            $('#el2Off').show();
-                                        } else {
-                                            $('#el2On').show();
-                                            $('#el2Off').hide();
-                                        }
-                                    } else {
-                                        $('#el2On').hide();
-                                        $('#el2Off').hide();
-                                    }
                                     if (data.NumFuelCell > 0) {
                                         if (data.Relays.FuelCell1Enable) {
+                                            $('#fc0On').hide();
+                                            $('#fc0Off').show();
+                                        } else {
+                                            $('#fc0On').show();
+                                            $('#fc0Off').hide();
+                                        }
+                                        if (data.Relays.FuelCell1Run) {
+                                            $('#fc0Run').hide();
+                                            $('#fc0Stop').show();
+                                        } else {
+                                            $('#fc0Run').show();
+                                            $('#fc0Stop').hide();
+                                        }
+                                    } else {
+                                        $('#fc0On').hide();
+                                        $('#fc0Off').hide();
+                                        $('#fc0Run').hide();
+                                        $('#fc0Stop').hide();
+                                    }
+
+                                    if (data.NumFuelCell > 1) {
+                                        if (data.Relays.FuelCell2Enable) {
                                             $('#fc1On').hide();
                                             $('#fc1Off').show();
                                         } else {
@@ -187,28 +209,6 @@
                                         $('#fc1Off').hide();
                                         $('#fc1Run').hide();
                                         $('#fc1Stop').hide();
-                                    }
-
-                                    if (data.NumFuelCell > 1) {
-                                        if (data.Relays.FuelCell2Enable) {
-                                            $('#fc2On').hide();
-                                            $('#fc2Off').show();
-                                        } else {
-                                            $('#fc2On').show();
-                                            $('#fc2Off').hide();
-                                        }
-                                        if (data.Relays.FuelCell1Run) {
-                                            $('#fc2Run').hide();
-                                            $('#fc2Stop').show();
-                                        } else {
-                                            $('#fc2Run').show();
-                                            $('#fc2Stop').hide();
-                                        }
-                                    } else {
-                                        $('#fc2On').hide();
-                                        $('#fc2Off').hide();
-                                        $('#fc2Run').hide();
-                                        $('#fc2Stop').hide();
                                     }
 
                                     if (data.Relays.GasToFuelCell) {
@@ -249,25 +249,25 @@
             <li class="status"><a href="/fc_detail.html">Fuel Cell Detail</a></li>
             <li class="status"><a href="/el_detail.html">Electrolyser Detail</a></li>
             <li class="status"><a href="/candump.html">Export a CAN .trc file</a></li>
-            <li class="operation" id="el1On"><a href="#" onclick="ElectrolyserOn(0)">Turn Electrolyser 1 On</a></li>
-            <li class="operation" id="el1Off"><a href="#" onclick="ElectrolyserOff(0)">Turn Electrolyser 1 Off</a></li>
-            <li class="operation" id="el2On"><a href="#" onclick="ElectrolyserOn(1)">Turn Electrolyser 2 On</a></li>
-            <li class="operation" id="el2Off"><a href="#" onclick="ElectrolyserOff(1)">Turn Electrolyser 2 Off</a></li>
-            <li class="operation" id="fc1On"><a href="#" onclick="FuelCellOn(0)">Turn Fuel Cell On</a></li>
-            <li class="operation" id="fc1Off"><a href="#" onclick="FuelCellOff(0)">Turn Fuel Cell Off</a></li>
-            <li class="operation" id="fc2On"><a href="#" onclick="FuelCellOn(1)">Turn Fuel Cell On</a></li>
-            <li class="operation" id="fc2Off"><a href="#" onclick="FuelCellOff(1)">Turn Fuel Cell Off</a></li>
-            <li class="operation" id="fc1Run"><a href="#" onclick="FuelCellStart(0)">Start Fuel Cell</a></li>
-            <li class="operation" id="fc1Stop"><a href="#" onclick="FuelCellStop(0)">Stop Fuel Cell</a><br /></li>
-            <li class="operation" id="fc2Run"><a href="#" onclick="FuelCellStart(1)">Start Fuel Cell</a></li>
-            <li class="operation" id="fc2Stop"><a href="#" onclick="FuelCellStop(1)">Stop Fuel Cell</a><br /></li>
+            <li class="operation" id="el0On"><a href="#" onclick="ElectrolyserOn(0)">Turn Electrolyser 1 On</a></li>
+            <li class="operation" id="el0Off"><a href="#" onclick="ElectrolyserOff(0)">Turn Electrolyser 1 Off</a></li>
+            <li class="operation" id="el1On"><a href="#" onclick="ElectrolyserOn(1)">Turn Electrolyser 2 On</a></li>
+            <li class="operation" id="el1Off"><a href="#" onclick="ElectrolyserOff(1)">Turn Electrolyser 2 Off</a></li>
+            <li class="operation" id="fc0On"><a href="#" onclick="FuelCellOn(0)">Turn Fuel Cell On</a></li>
+            <li class="operation" id="fc0Off"><a href="#" onclick="FuelCellOff(0)">Turn Fuel Cell Off</a></li>
+            <li class="operation" id="fc1On"><a href="#" onclick="FuelCellOn(1)">Turn Fuel Cell On</a></li>
+            <li class="operation" id="fc1Off"><a href="#" onclick="FuelCellOff(1)">Turn Fuel Cell Off</a></li>
+            <li class="operation" id="fc0Run"><a href="#" onclick="FuelCellStart(0)">Start Fuel Cell</a></li>
+            <li class="operation" id="fc0Stop"><a href="#" onclick="FuelCellStop(0)">Stop Fuel Cell</a><br /></li>
+            <li class="operation" id="fc1Run"><a href="#" onclick="FuelCellStart(1)">Start Fuel Cell</a></li>
+            <li class="operation" id="fc1Stop"><a href="#" onclick="FuelCellStop(1)">Stop Fuel Cell</a><br /></li>
             <li class="operation" id="gasOn"><a href="#" onclick="GasOn()">Turn the Gas to the Fuel Cell on.</a></li>
             <li class="operation" id="gasOff"><a href="#" onclick="GasOff()">Turn the Gas to the Fuel Cell off.</a><br /></li>
             <li class="operation" id="drainOn"><a href="#" onclick="DrainOn()">Turn the Drain on.</a></li>
             <li class="operation" id="drainOff"><a href="#" onclick="DrainOff()">Turn the Drain off.</a><br /></li>
             <li class="status"><a href="/eg_status.html">ElektrikGreen Status Page</a></li>
             <li class="status"><a href="/FuelCellConfig.html">Edit the fuel cell configuration file</a></li>
-            <li class="status"><a href="/el/setrate">Set Electrolyser Rate</a></li>
+            <li class="status"><a href="/setRate.html">Set Electrolyser Rate</a></li>
             <li class="status"><a href="/settings">Change Settings</a></li>
 
             <li class="status" id="fcMaintenanceOn"><a href="#" onclick="FuelCellMaintenanceOn()">Enable Fuel Cell Maintenance Mode</a></li>

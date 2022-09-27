@@ -100,52 +100,52 @@
       var  Data = document.getElementById("Data");
       var url = "ws://" + window.location.host + "/ws";
       var conn = new WebSocket(url);
+      fc0 = $("#FuelCell0");
+      fc0Label = $("#FuelCell0Label");
       fc1 = $("#FuelCell1");
       fc1Label = $("#FuelCell1Label");
-      fc2 = $("#FuelCell2");
-      fc2Label = $("#FuelCell2Label");
       tank = $("#TankPressure");
       tankLabel = $("#tankPressureLabel");
       conn.onclose = function() {
         Data.textContent = 'Connection closed';
+        fc0.jqxGauge({caption:{value:"Connection Closed"}});
         fc1.jqxGauge({caption:{value:"Connection Closed"}});
-        fc2.jqxGauge({caption:{value:"Connection Closed"}});
       }
       conn.onmessage = function(evt) {
         try{
           jsonData = JSON.parse(evt.data);
 
           if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 0)) {
-            if(fc1.jqxGauge('value') !== jsonData.FuelCells[0].Output) {
-              fc1.show();
+            if(fc0.jqxGauge('value') !== jsonData.FuelCells[0].Output) {
+              fc0.show();
               sCaption = jsonData.FuelCells[0].Output.toFixed(0) + " Watts";
-              fc1.jqxGauge({caption:{value:sCaption}});
-              fc1.val(jsonData.FuelCells[0].Output);
+              fc0.jqxGauge({caption:{value:sCaption}});
+              fc0.val(jsonData.FuelCells[0].Output);
             }
-            if ((jsonData.FuelCells[0].State == "Switched Off") || (jsonData.FuelCells[0].State == "")) {
-              fc1Label.text("Fuel Cell 1 (OFF)")
+            if ((jsonData.FuelCells[0].State === "Switched Off") || (jsonData.FuelCells[0].State === "")) {
+              fc0Label.text("Fuel Cell 0 (OFF)")
             } else {
-              fc1Label.text("Fuel Cell 1 (" + jsonData.FuelCells[0].Output.toFixed(0) + " Watts)");
+              fc0Label.text("Fuel Cell 0 (" + jsonData.FuelCells[0].Output.toFixed(0) + " Watts)");
             }
           } else {
-            $("#fc1").css("display","none");
+            $("#fc0").css("display","none");
           }
 
 
           if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 1)) {
-            if(fc2.jqxGauge('value') !== jsonData.FuelCells[1].Output) {
-              fc2.show();
+            if(fc1.jqxGauge('value') !== jsonData.FuelCells[1].Output) {
+              fc1.show();
               sCaption = jsonData.FuelCells[1].Output.toFixed(0) + " Watts";
-              fc2.jqxGauge({caption:{value:sCaption}});
-              fc2.val(jsonData.Electrolysers[1].Output);
+              fc1.jqxGauge({caption:{value:sCaption}});
+              fc1.val(jsonData.FuelCells[1].Output);
             }
-            if ((jsonData.FuelCells[1].State == "Switched Off") || (jsonData.FuelCells[1].State == "")) {
-              el2Label.text("Fuel Cell 2 (OFF)")
+            if ((jsonData.FuelCells[1].State === "Switched Off") || (jsonData.FuelCells[1].State === "")) {
+              fc1Label.text("Fuel Cell 1 (OFF)")
             } else {
-              el2Label.text("Fuel Cell 2 (" + jsonData.FuelCells[1].Output.toFixed(0) + " Watts)");
+              fc1Label.text("Fuel Cell 1 (" + jsonData.FuelCells[1].Output.toFixed(0) + " Watts)");
             }
           } else {
-            $("#fc2").css("display","none");
+            $("#fc1").css("display","none");
           }
 
           if(tank.jqxLinearGauge('value') !== jsonData.Gas) {
@@ -160,7 +160,7 @@
     }
 
     function setUpGauges(){
-      $('#FuelCell1').jqxGauge({
+      $('#FuelCell0').jqxGauge({
                         ranges: [{startValue: -50, endValue: 2500, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
                             {startValue: 2500, endValue: 3750, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
                             {startValue: 3750, endValue: 4250, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
@@ -179,7 +179,7 @@
         height: '100%'
       });
 
-      $('#FuelCell2').jqxGauge({
+      $('#FuelCell1').jqxGauge({
         ranges: [{startValue: -50, endValue: 2500, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
           {startValue: 2500, endValue: 3750, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
           {startValue: 3750, endValue: 4250, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
@@ -224,20 +224,20 @@
 </head>
 <body>
 <div class="gauge_row">
+  <div id="fc0" class="dial_gauge">
+    <div class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=0')">
+      <div id='FuelCell0' style="width:49vw"></div><br />
+    </div>
+    <div>
+      <h2 id="FuelCell0Label" style="text-align:center">Fuel Cell 1</h2>
+    </div>
+  </div>
   <div id="fc1" class="dial_gauge">
     <div class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=1')">
       <div id='FuelCell1' style="width:49vw"></div><br />
     </div>
     <div>
-      <h2 id="FuelCell1Label" style="text-align:center">Fuel Cell 1</h2>
-    </div>
-  </div>
-  <div id="fc2" class="dial_gauge">
-    <div class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=2')">
-      <div id='FuelCell2' style="width:49vw"></div><br />
-    </div>
-    <div>
-      <h2 id="FuelCell2Label" style="text-align:center">Fuel Cell 2</h2>
+      <h2 id="FuelCell1Label" style="text-align:center">Fuel Cell 2</h2>
     </div>
   </div>
   <div class="linear_gauge" style="left:0">

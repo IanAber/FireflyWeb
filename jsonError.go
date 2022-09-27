@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 )
 
 type errorObj struct {
@@ -61,7 +62,8 @@ func ReturnJSONError(w http.ResponseWriter, device string, err error, httpReturn
 	jErr.Success = false
 	jErr.ReturnError(w, httpReturnCode)
 	if bLog {
-		log.Print(err)
+		_, caller, line, _ := runtime.Caller(1)
+		log.Printf("%s : %d : %v", caller, line, err)
 	}
 }
 

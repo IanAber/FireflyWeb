@@ -106,29 +106,29 @@
             var  Data = document.getElementById("Data");
             var url = "ws://" + window.location.host + "/ws";
             var conn = new WebSocket(url);
+            el0 = $("#Electrolyser0");
             el1 = $("#Electrolyser1");
-            el2 = $("#Electrolyser2");
             tank = $("#TankPressure");
             tankLabel = $("#tankPressureLabel");
+            slider0 = $("#Electrolyser0Slider");
             slider1 = $("#Electrolyser1Slider");
-            slider2 = $("#Electrolyser2Slider");
+            el0Label = $("#electrolyser0Label");
             el1Label = $("#electrolyser1Label");
-            el2Label = $("#electrolyser2Label");
             conn.onclose = function() {
                 Data.textContent = 'Connection closed';
+                el0.jqxGauge({caption:{value:"Connection Closed"}});
                 el1.jqxGauge({caption:{value:"Connection Closed"}});
-                el2.jqxGauge({caption:{value:"Connection Closed"}});
             }
             conn.onmessage = function(evt) {
                 try{
                     jsonData = JSON.parse(evt.data);
                     if (jsonData.Electrolysers[0].On) {
-                        $("#el1").css({display:"unset"})
-                        $("#el1_off").css({display:"none"})
-                        if(el1.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
+                        $("#el0").css({display:"unset"})
+                        $("#el0_off").css({display:"none"})
+                        if(el0.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
                             sCaption = jsonData.Electrolysers[0].Flow.toFixed(1) + " NL/Hour";
-                            el1.jqxGauge({caption:{value:sCaption}});
-                            el1.val(jsonData.Electrolysers[0].Flow);
+                            el0.jqxGauge({caption:{value:sCaption}});
+                            el0.val(jsonData.Electrolysers[0].Flow);
                         }
                         if (!slider1Active) {
                             if (jsonData.Electrolysers[0].State === "Idle") {
@@ -142,18 +142,18 @@
                                 slider1.jqxSlider({theme:"energyblue"})
                             }
                         }
-                        el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
+                        el0Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
                     } else {
-                        $("#el1").css({display:"none"})
-                        $("#el1_off").css({display:"unset"})
+                        $("#el0").css({display:"none"})
+                        $("#el0_off").css({display:"unset"})
                     }
                     if(jsonData.Electrolysers[1].On) {
-                        $("#el2").css({display:"unset"})
-                        $("#el2_off").css({display:"none"})
-                        if(el2.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
+                        $("#el1").css({display:"unset"})
+                        $("#el1_off").css({display:"none"})
+                        if(el1.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
                             sCaption = jsonData.Electrolysers[1].Flow.toFixed(1) + " NL/Hour";
-                            el2.jqxGauge({caption:{value:sCaption}});
-                            el2.val(jsonData.Electrolysers[1].Flow);
+                            el1.jqxGauge({caption:{value:sCaption}});
+                            el1.val(jsonData.Electrolysers[1].Flow);
                         }
 
                         if (!slider2Active) {
@@ -168,10 +168,10 @@
                                 slider2.jqxSlider({theme:"energyblue"})
                             }
                         }
-                        el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
+                        el1Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
                     } else {
-                        $("#el2").css({display:"none"})
-                        $("#el2_off").css({display:"unset"})
+                        $("#el1").css({display:"none"})
+                        $("#el1_off").css({display:"unset"})
 
                     }
 
@@ -312,7 +312,7 @@
 </head>
 <body>
 <div class="gauge_row">
-    <div class="dial_gauge" id="el1" style="display:unset">
+    <div class="dial_gauge" id="el0" style="display:unset">
         <div class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=1')">
             <div id='Electrolyser1' style="width:49vw"></div><br />
         </div>
@@ -321,10 +321,10 @@
             <h2 id="electrolyser1Label" style="text-align:center">Electrolyser 1</h2>
         </div>
     </div>
-    <div class="dial_gauge" id="el1_off" style="display:none">
+    <div class="dial_gauge" id="el0_off" style="display:none">
         <h1>Electrolyer 1 is switched off</h1>
     </div>
-    <div class="dial_gauge" id="el2" style="display:unset">
+    <div class="dial_gauge" id="el1" style="display:unset">
         <div class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=2')">
             <div id='Electrolyser2' style="width:49vw"></div><br />
         </div>
@@ -333,7 +333,7 @@
             <h2 id="electrolyser2Label" style="text-align:center">Electrolyser 2</h2>
         </div>
     </div>
-    <div class="dial_gauge" id="el2_off" style="display:none">
+    <div class="dial_gauge" id="el1_off" style="display:none">
         <h1>Electrolyer 2 is switched off</h1>
     </div>
     <div class="linear_gauge" style="left:0">

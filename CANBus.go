@@ -65,18 +65,18 @@ type Frame struct { // CAN bus frames from the FCM804
 }
 
 type CANBus struct {
-	EventTime       time.Time          // The time for the event we are recording
-	OnDemand        bool               // True if we are logging on demand or false if because we encountered a fault
-	dataSet         [4096]Frame        // Ring buffer of frames in which to store incoling messages
-	ringStart       int                // Pointer to the start of the buffer
-	ringEnd         int                // pointer to the end of the buffer
-	saving          bool               // Are we currently saving the buffer
-	onDemandEnd     time.Time          // If this time is in the future we log all buffers of interest immediately to the database
-	fuelCell        map[uint16]*FCM804 // A map of all the fuel cells in the system indexed byt their ID.
-	lastLoggedEvent string             // Event date/time for the most recently logged event
-	waitForLogger   bool               // If true, the current buffer will be saved when the next 0x400 frame with an ID of 0 is received
-	ringCount       int                // Number of records in the ring buffer - We will not write log files with less than 960 entries
-	LogStatement    *sql.Stmt          // Prepared statement to log CAN frames
+	EventTime       time.Time         // The time for the event we are recording
+	OnDemand        bool              // True if we are logging on demand or false if because we encountered a fault
+	dataSet         [4096]Frame       // Ring buffer of frames in which to store incoling messages
+	ringStart       int               // Pointer to the start of the buffer
+	ringEnd         int               // pointer to the end of the buffer
+	saving          bool              // Are we currently saving the buffer
+	onDemandEnd     time.Time         // If this time is in the future we log all buffers of interest immediately to the database
+	fuelCell        map[uint8]*FCM804 // A map of all the fuel cells in the system indexed byt their ID.
+	lastLoggedEvent string            // Event date/time for the most recently logged event
+	waitForLogger   bool              // If true, the current buffer will be saved when the next 0x400 frame with an ID of 0 is received
+	ringCount       int               // Number of records in the ring buffer - We will not write log files with less than 960 entries
+	LogStatement    *sql.Stmt         // Prepared statement to log CAN frames
 }
 
 type CANFaultDefinition struct {
@@ -101,7 +101,7 @@ func (pLogger *CANBus) loadFaultDefinitions() {
 	errorDefinitions = make(map[uint16]CANFaultDefinition, 128)
 
 	if pDB == nil {
-		pDB, err = connectToDatabase()
+		err = pLogger.ConnectToDatabase()
 		if err != nil {
 			log.Println(err)
 			return
@@ -206,36 +206,24 @@ var next0x400id uint64
 func (pLogger *CANBus) logCANData() {
 	for {
 		frame := <-CanLogChannel
-		debugPrint("Logging CAN data")
 
 		if time.Now().Before(pLogger.onDemandEnd) {
 			pLogger.OnDemand = true
 			pLogger.setEventDateTime()
 		}
-		if (params.FuelCellLogOnEnable && SystemStatus.Relays.FuelCell1Enable) ||
-			(params.FuelCellLogOnRun && SystemStatus.Relays.FuelCell1Run) {
+		if (params.FuelCellLogOnEnable && SystemStatus.Relays.FC0Enable) ||
+			(params.FuelCellLogOnRun && SystemStatus.Relays.FC0Run) {
 			pLogger.OnDemand = true
 			pLogger.setEventDateTime()
 		}
 
 		if pLogger.OnDemand {
-			if pDB == nil {
-				log.Print("Database is not connected in CAN logger")
+			if (pDB == nil) || (pLogger.LogStatement == nil) {
+				log.Print("Database is not connected or log statment is closed in CAN logger")
 				var err error
-				pDB, err = connectToDatabase()
+				err = pLogger.ConnectToDatabase()
 				if err != nil {
 					log.Print("Failed to connect ot the database - ", err)
-				} else {
-					pLogger.LogStatement, err = pDB.Prepare(LoggerSQLStatement)
-					if err != nil {
-						log.Print("Failed to prepare the CAN logger sttement - ", err)
-						if err := pDB.Close(); err != nil {
-							log.Print(err)
-						}
-						pDB = nil
-					} else {
-						log.Print("Can logging statment prepared.")
-					}
 				}
 			}
 			if pDB != nil {
@@ -280,12 +268,12 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 		clearBufferTimer = time.AfterFunc(time.Second*5, pLogger.clearBuffers)
 	}
 
-	device := uint16(frm.ID & 7)
+	device := uint8(frm.ID & 7)
 	frameID := frm.ID & 0xFFFFFFF8
 	if (frameID != 0x400) && (frameID != 0x6f0) {
 		fcm, found := pLogger.fuelCell[device]
 		if !found {
-			fmt.Printf("Adding fuel cell %d - Frame with %04x\n", device, frameID)
+			log.Printf("Adding fuel cell %d - Frame with %04x\n", device, frameID)
 			// We don't have this device in our map, so we should add it.
 			pLogger.fuelCell[device] = NewFCM804(pLogger, device)
 			fcm = pLogger.fuelCell[device]
@@ -327,7 +315,7 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 	if FrameNumber > 0x2E {
 		log.Println("Bad 0x400 frame ID = ", FrameNumber)
 	} else {
-		RecordingFrame.FrameData[FrameNumber].data = make([]byte, 8)
+		RecordingFrame.FrameData[FrameNumber].data = make([]byte, 7)
 		RecordingFrame.FrameData[FrameNumber].tOffset = int16(time.Now().Sub(RecordingFrame.Time).Milliseconds())
 		for idx, d := range frm.Data[1:8] {
 			RecordingFrame.FrameData[FrameNumber].data[idx] = d
@@ -335,79 +323,106 @@ func (pLogger *CANBus) handleCANFrame(frm can.Frame) {
 	}
 	if FrameNumber == 0x2E {
 		// Last frame so switch to allow saving the completed set to the database
-		debugPrint("Trigerring CAN data log")
-
 		CanLogChannel <- RecordingFrame
 		RecordingFrame = nil
 	}
 }
 
-// logCanFrame logs the current ring buffer contents to the database
-func (pLogger *CANBus) logCanFrames() {
-	// When we leave here we need to have reset the ring buffer
-	defer func() {
-		pLogger.ringStart = 0
-		pLogger.ringEnd = 0
-		pLogger.ringCount = 0
-		pLogger.saving = false
-		pLogger.waitForLogger = false
-	}()
-	if params.DebugOutput {
-		log.Println("Log CAN data")
-	}
-	var err error
-	var event sql.NullTime
-	event.Time = time.Now()
-	event.Valid = true
-	pLogger.saving = true
-	if pDB == nil {
-		pDB, err = connectToDatabase()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
-	pLogger.lastLoggedEvent = event.Time.Format("2006-01-02T15:04:05:06")
-	if params.DebugOutput {
-		log.Println("Logging event - ", pLogger.lastLoggedEvent)
-	}
+//// logCanFrame logs the current ring buffer contents to the database
+//func (pLogger *CANBus) logCanFrames() {
+//	// When we leave here we need to have reset the ring buffer
+//	defer func() {
+//		pLogger.ringStart = 0
+//		pLogger.ringEnd = 0
+//		pLogger.ringCount = 0
+//		pLogger.saving = false
+//		pLogger.waitForLogger = false
+//	}()
+//	if params.DebugOutput {
+//		log.Println("Log CAN data")
+//	}
+//	var err error
+//	var event sql.NullTime
+//	event.Time = time.Now()
+//	event.Valid = true
+//	pLogger.saving = true
+//	if pDB == nil {
+//		pDB, err = connectToDatabase()
+//		if err != nil {
+//			log.Println(err)
+//			return
+//		}
+//	}
+//	pLogger.lastLoggedEvent = event.Time.Format("2006-01-02T15:04:05:06")
+//	if params.DebugOutput {
+//		log.Println("Logging event - ", pLogger.lastLoggedEvent)
+//	}
+//
+//	for {
+//		_, err := pDB.Exec(LoggerSQLStatement, pLogger.dataSet[pLogger.ringStart].id, pLogger.dataSet[pLogger.ringStart].data, event, false)
+//		if err != nil {
+//			log.Println(err)
+//			if err := pDB.Close(); err != nil {
+//				log.Println(err)
+//			}
+//			pDB = nil
+//			return
+//		}
+//		pLogger.ringStart++
+//		if pLogger.ringStart >= len(pLogger.dataSet) {
+//			pLogger.ringStart = 0
+//		}
+//		if pLogger.ringStart == pLogger.ringEnd {
+//			return
+//		}
+//	}
+//}
 
-	for {
-		_, err := pDB.Exec(LoggerSQLStatement, pLogger.dataSet[pLogger.ringStart].id, pLogger.dataSet[pLogger.ringStart].data, event, false)
-		if err != nil {
-			log.Println(err)
-			if err := pDB.Close(); err != nil {
-				log.Println(err)
-			}
-			pDB = nil
-			return
-		}
-		pLogger.ringStart++
-		if pLogger.ringStart >= len(pLogger.dataSet) {
-			pLogger.ringStart = 0
-		}
-		if pLogger.ringStart == pLogger.ringEnd {
-			return
+/*
+ConnectToDatabase will reconnect to the database if it is disconnected and prepare the logging statement
+*/
+func (pLogger *CANBus) ConnectToDatabase() error {
+	if pDB == nil {
+		if dbConn, err := connectToDatabase(); err != nil {
+			return err
+		} else {
+			pDB = dbConn
 		}
 	}
+	if stmt, err := pDB.Prepare(LoggerSQLStatement); err != nil {
+		log.Print("Error preparing CAN logger statement - ", err)
+		if err := pDB.Close(); err != nil {
+			log.Println(err)
+		}
+		pDB = nil
+		return err
+	} else {
+		pLogger.LogStatement = stmt
+	}
+	return nil
 }
 
 // CanBusMonitor starts the CAN bus monitor and logger
 func (pLogger *CANBus) CanBusMonitor() {
 	for {
+
 		bus, err := can.NewBusForInterfaceWithName("can0")
 		if err != nil {
 			log.Println("CAN interface not available.", err)
 		} else {
-			pLogger.LogStatement, err = pDB.Prepare(LoggerSQLStatement)
-			if err != nil {
-				log.Print("Error setting up the CAN logger - ", err)
-				return
+			if pDB == nil {
+				if err = pLogger.ConnectToDatabase(); err != nil {
+					log.Println(err)
+					return
+				}
 			}
+			log.Println("Subscribing the handleCANFrame function")
 			bus.SubscribeFunc(pLogger.handleCANFrame)
 			err = bus.ConnectAndPublish()
 			if err != nil {
 				log.Println("ConnectAndPublish failed, cannot log CAN frames.", err)
+			} else {
+				log.Println("Logging CAN data from the fuel cells from can0")
 			}
 		}
 		// If something goes wrong sleep for 10 seconds and try again.
@@ -418,19 +433,13 @@ func (pLogger *CANBus) CanBusMonitor() {
 /**
 Set up the logger and start processing 'CAN' frames
 */
-func initCANLogger(numFuelCells uint16) *CANBus {
+func initCANLogger() *CANBus {
 	logger := new(CANBus)
 	logger.ringStart = 0
 	logger.ringEnd = 0
 	logger.saving = false
-	logger.fuelCell = make(map[uint16]*FCM804)
-	for cell := uint16(0); cell < numFuelCells; cell++ {
-		logger.fuelCell[cell] = NewFCM804(logger, cell)
-	}
+	logger.fuelCell = make(map[uint8]*FCM804)
 	logger.onDemandEnd = time.Now()
-
-	go logger.logCANData()
-	go logger.CanBusMonitor()
 
 	return logger
 }

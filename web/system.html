@@ -106,34 +106,34 @@
             let  Data = document.getElementById("Data");
             let url = "ws://" + window.location.host + "/ws";
             let conn = new WebSocket(url);
+            let el0 = $("#Electrolyser0");
             let el1 = $("#Electrolyser1");
-            let el2 = $("#Electrolyser2");
             let tank = $("#TankPressure");
+            let fc0 = $('#FuelCell0');
             let fc1 = $('#FuelCell1');
-            let fc2 = $('#FuelCell2');
+            let fc0Label = $("#FuelCell0Label");
             let fc1Label = $("#FuelCell1Label");
-            let fc2Label = $("#FuelCell2Label");
-            let tankLabel = $("#tankPressureLabel");
-            let slider1 = $("#Electrolyser1Slider");
-            let slider2 = $("#Electrolyser2Slider");
+            let tankLabel = $("#tankPressureLabelValue");
+            let slider1 = $("#Electrolyser0Slider");
+            let slider2 = $("#Electrolyser1Slider");
+            let el0Label = $("#electrolyser0Label");
             let el1Label = $("#electrolyser1Label");
-            let el2Label = $("#electrolyser2Label");
             conn.onclose = function() {
                 Data.textContent = 'Connection closed';
+                el0.jqxGauge({caption:{value:"Connection Closed"}});
                 el1.jqxGauge({caption:{value:"Connection Closed"}});
-                el2.jqxGauge({caption:{value:"Connection Closed"}});
             }
             conn.onmessage = function(evt) {
                 try{
                     jsonData = JSON.parse(evt.data);
                     if (jsonData.Electrolysers.length > 0) {
                         if (jsonData.Electrolysers[0].On) {
-                            $("#el1").css({display:"unset"})
-                            $("#el1_off").css({display:"none"})
-                            if(el1.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
+                            $("#el0").css({display:"unset"})
+                            $("#el0_off").css({display:"none"})
+                            if(el0.jqxGauge('value') !== jsonData.Electrolysers[0].Flow) {
                                 sCaption = jsonData.Electrolysers[0].Flow.toFixed(1) + " NL/Hour";
-                                el1.jqxGauge({caption:{value:sCaption}});
-                                el1.val(jsonData.Electrolysers[0].Flow);
+                                el0.jqxGauge({caption:{value:sCaption}});
+                                el0.val(jsonData.Electrolysers[0].Flow);
                             }
                             if (!slider1Active) {
                                 if (jsonData.Electrolysers[0].State === "Idle") {
@@ -147,23 +147,23 @@
                                     slider1.jqxSlider({theme:"energyblue"})
                                 }
                             }
-                            el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
+                            el0Label.text("Electrolyser 0 (" + jsonData.Electrolysers[0].Rate + "% " + jsonData.Electrolysers[0].State + ")");
                         } else {
-                            $("#el1").css({display:"none"})
-                            $("#el1_off").css({display:"unset"})
+                            $("#el0").css({display:"none"})
+                            $("#el0_off").css({display:"unset"})
                         }
                     } else {
-                        $("#el1").css({display:"none"})
-                        $("#el1_off").css({display:"none"})
+                        $("#el0").css({display:"none"})
+                        $("#el0_off").css({display:"none"})
                     }
                     if (jsonData.Electrolysers.length > 1) {
                         if (jsonData.Electrolysers[1].On) {
-                            $("#el2").css({display: "unset"})
-                            $("#el2_off").css({display: "none"})
-                            if (el2.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
+                            $("#el1").css({display: "unset"})
+                            $("#el1_off").css({display: "none"})
+                            if (el1.jqxGauge('value') !== jsonData.Electrolysers[1].Flow) {
                                 sCaption = jsonData.Electrolysers[1].Flow.toFixed(1) + " NL/Hour";
-                                el2.jqxGauge({caption: {value: sCaption}});
-                                el2.val(jsonData.Electrolysers[1].Flow);
+                                el1.jqxGauge({caption: {value: sCaption}});
+                                el1.val(jsonData.Electrolysers[1].Flow);
                             }
 
                             if (!slider2Active) {
@@ -178,84 +178,83 @@
                                     slider2.jqxSlider({theme: "energyblue"})
                                 }
                             }
-                            el2Label.text("Electrolyser 2 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
+                            el1Label.text("Electrolyser 1 (" + jsonData.Electrolysers[1].Rate + "% " + jsonData.Electrolysers[1].State + ")");
                         } else {
-                            $("#el2").css({display:"none"})
-                            $("#el2_off").css({display:"unset"})
+                            $("#el1").css({display:"none"})
+                            $("#el1_off").css({display:"unset"})
                         }
                     }else {
-                            $("#el2").css({display:"none"})
-                            $("#el2_off").css({display:"none"})
+                            $("#el1").css({display:"none"})
+                            $("#el1_off").css({display:"none"})
                     }
 
                     if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 0)) {
                         switch (jsonData.FuelCells[0].FaultLevel) {
-                            case 0 : fc1.css("background-color", "transparent");
+                            case 0 : fc0.css("background-color", "transparent");
                                 break;
-                            case 1 : fc1.css("background-color", "#d0F0d0");
+                            case 1 : fc0.css("background-color", "#d0F0d0");
                                 break;
-                            case 2 : fc1.css("background-color", "#a0F0a0");
+                            case 2 : fc0.css("background-color", "#a0F0a0");
                                 break;
-                            case 3 : fc1.css("background-color", "#F0d0d0");
+                            case 3 : fc0.css("background-color", "#F0d0d0");
                                 break;
-                            default : fc1.css("background-color", "#F0a0a0");
+                            default : fc0.css("background-color", "#F0a0a0");
                                 break;
                         }
                         if (jsonData.FuelCells[0].FaultLevel > 2) {
-                            fc1.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
-                            fc1.css("background-color", "orange");
-                            fc1.jqxGauge({colorScheme:'scheme03'})
+                            fc0.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
+                            fc0.css("background-color", "orange");
+                            fc0.jqxGauge({colorScheme:'scheme03'})
                         } else {
-                            fc1.jqxGauge({ style: { fill: '#fcfcfcfc', stroke: '#00ff00' }})
-                            fc1.jqxGauge({colorScheme:'scheme02'})
+                            fc0.jqxGauge({ style: { fill: '#fcfcfcfc', stroke: '#00ff00' }})
+                            fc0.jqxGauge({colorScheme:'scheme02'})
                         }
-                        if(fc1.jqxGauge('value') !== jsonData.FuelCells[0].Output) {
-                            fc1.show();
+                        if(fc0.jqxGauge('value') !== jsonData.FuelCells[0].Output) {
+                            fc0.show();
                             sCaption = jsonData.FuelCells[0].Output.toFixed(0) + " Watts";
-                            fc1.jqxGauge({caption:{value:sCaption}});
-                            fc1.val(jsonData.FuelCells[0].Output);
+                            fc0.jqxGauge({caption:{value:sCaption}});
+                            fc0.val(jsonData.FuelCells[0].Output);
                         }
                         if ((jsonData.FuelCells[0].State === "Switched Off") || (jsonData.FuelCells[0].State === "")) {
-                            fc1Label.text("Fuel Cell 1 (OFF)")
+                            fc0Label.text("Fuel Cell 1 (OFF)")
                         } else {
-                            fc1Label.text("Fuel Cell 1 (" + jsonData.FuelCells[0].Output.toFixed(0) + " Watts)");
+                            fc0Label.text("Fuel Cell 1 (" + jsonData.FuelCells[0].Output.toFixed(0) + " Watts)");
                         }
-                        $("#fuelCell1Alarm").text(jsonData.FuelCells[0].Alarm);
+                        $("#fuelCell0Alarm").text(jsonData.FuelCells[0].Alarm);
                     } else {
-                        $("#fc1").css("display","none");
+                        $("#fc0").css("display","none");
                     }
 
                     if ((jsonData.FuelCells != null) && (jsonData.FuelCells.length > 1)) {
                         if (jsonData.FuelCells[1].Alarm !== "") {
-                            fc2.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
-                            fc2.css("background-color", "red");
-                            fc2.jqxGauge({colorScheme:'scheme03'})
+                            fc1.jqxGauge({ style: { fill: '#dca0a0', stroke: '#ff0000' }})
+                            fc1.css("background-color", "red");
+                            fc1.jqxGauge({colorScheme:'scheme03'})
                         } else {
-                            fc2.jqxGauge({ style: { fill: '#cccccc', stroke: '#eeeeee' }})
-                            fc2.css("background-color", "transparent");
-                            fc2.jqxGauge({colorScheme:'scheme02'})
+                            fc1.jqxGauge({ style: { fill: '#cccccc', stroke: '#eeeeee' }})
+                            fc1.css("background-color", "transparent");
+                            fc1.jqxGauge({colorScheme:'scheme02'})
                         }
-                        if(fc2.jqxGauge('value') !== jsonData.FuelCells[1].Output) {
-                            fc2.show();
+                        if(fc1.jqxGauge('value') !== jsonData.FuelCells[1].Output) {
+                            fc1.show();
                             sCaption = jsonData.FuelCells[1].Output.toFixed(0) + " Watts";
-                            fc2.jqxGauge({caption:{value:sCaption}});
-                            fc2.val(jsonData.Electrolysers[1].Output);
+                            fc1.jqxGauge({caption:{value:sCaption}});
+                            fc1.val(jsonData.Electrolysers[1].Output);
                         }
                         if ((jsonData.FuelCells[1].State === "Switched Off") || (jsonData.FuelCells[1].State === "")) {
-                            el2Label.text("Fuel Cell 2 (OFF)")
+                            el1Label.text("Fuel Cell 2 (OFF)")
                         } else {
-                            el2Label.text("Fuel Cell 2 (" + jsonData.FuelCells[1].Output.toFixed(0) + " Watts)");
+                            el1Label.text("Fuel Cell 2 (" + jsonData.FuelCells[1].Output.toFixed(0) + " Watts)");
                         }
-                        $("#fuelCell2Alarm").innerText = jsonData.FuelCells[1].Alarm;
+                        $("#fuelCell1Alarm").innerText = jsonData.FuelCells[1].Alarm;
                     } else {
-                        $("#fc2").css("display","none");
+                        $("#fc1").css("display","none");
                     }
 
                     if(tank.jqxLinearGauge('value') !== jsonData.Gas) {
-                        sCaption = jsonData.Gas.toFixed(1) + " bar";
-//                        tank.jqxLinearGauge({caption:{value:sCaption}});
+                        sCaption = (jsonData.Gas).toFixed(1);
                         tank.val(jsonData.Gas);
-                        tankLabel.text("H2 (" + Math.round(jsonData.Gas * 10) / 10 + " bar)");
+                        tankLabel.text(sCaption);
                     }
 
                 } catch (e) {
@@ -266,7 +265,7 @@
 
         function Slider1Start(event) {
             slider1Active = true;
-            sliderStartVal = $("#Electrolyser1Slider").val()
+            sliderStartVal = $("#Electrolyser0Slider").val()
         }
         function Slider1End(event) {
             rate = Math.round(event.args.value)
@@ -278,7 +277,7 @@
 
         function Slider2Start(event) {
             slider2Active = true;
-            sliderStartVal = $("#Electrolyser2Slider").val()
+            sliderStartVal = $("#Electrolyser1Slider").val()
         }
 
         function Slider2End(event) {
@@ -298,11 +297,11 @@
         }
 
         function setUpGauges(){
+            let el0 = $('#Electrolyser0Container')
             let el1 = $('#Electrolyser1Container')
-            let el2 = $('#Electrolyser2Container')
+            let fc0 = $('#FuelCell0Container')
             let fc1 = $('#FuelCell1Container')
-            let fc2 = $('#FuelCell2Container')
-            $('#Electrolyser1').jqxGauge({
+            $('#Electrolyser0').jqxGauge({
                 ticksMinor: {interval: 10, size: '5%'},
                 ticksMajor: {interval: 50,size: '9%'},
                 max: 550,
@@ -318,7 +317,7 @@
                 height: '100%'
             });
 
-            slider1 = $('#Electrolyser1Slider')
+            slider1 = $('#Electrolyser0Slider')
             slider1.jqxSlider({
                 max:100,
                 min:59,
@@ -334,7 +333,7 @@
             slider1.on('slideEnd', Slider1End);
             slider1.on('slideStart', Slider1Start);
 
-            $('#Electrolyser2').jqxGauge({
+            $('#Electrolyser1').jqxGauge({
                 ticksMinor: {interval: 10, size: '5%'},
                 ticksMajor: {interval: 50,size: '9%'},
                 max: 550,
@@ -349,7 +348,7 @@
                 height: '100%',
             });
 
-            slider2 = $('#Electrolyser2Slider');
+            slider2 = $('#Electrolyser1Slider');
             slider2.jqxSlider({
                 max:100,
                 min:59,
@@ -365,7 +364,7 @@
             slider2.on('slideEnd', Slider2End);
             slider2.on('slideStart', Slider2Start);
 
-            $('#FuelCell1').jqxGauge({
+            $('#FuelCell0').jqxGauge({
                 ranges: [{startValue: -50, endValue: 2500, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
                     {startValue: 2500, endValue: 3750, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
                     {startValue: 3750, endValue: 4250, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
@@ -383,7 +382,7 @@
                 height: '100%'
             });
 
-            $('#FuelCell2').jqxGauge({
+            $('#FuelCell1').jqxGauge({
                 ranges: [{startValue: -50, endValue: 2500, style: {fill: 'GREEN', stroke: 'GREEN'}, startWidth: 10, endWidth: 8},
                     {startValue: 2500, endValue: 3750, style: {fill: 'ORANGE', stroke: 'ORANGE'}, startWidth: 8, endWidth: 5},
                     {startValue: 3750, endValue: 4250, style: {fill: 'RED', stroke: 'RED'}, startWidth: 5, endWidth: 5}],
@@ -420,16 +419,16 @@
                 width: '95%',
                 height: '100%',
             });
-            if (el1.width() > el1.height()) {
+            if (el0.width() > el0.height()) {
+                el0.css("width","39vh");
                 el1.css("width","39vh");
-                el2.css("width","39vh");
+                fc0.css("width","39vh");
                 fc1.css("width","39vh");
-                fc2.css("width","39vh");
             } else {
+                el0.css("height", "39vw")
                 el1.css("height", "39vw")
-                el2.css("height", "39vw")
+                fc0.css("height", "39vw")
                 fc1.css("height", "39vw")
-                fc2.css("height", "39vw")
             }
             receiveStatus();
         }
@@ -441,6 +440,20 @@
     <div>
         <div style="float:left; width:83vw; height:95vh">
             <div class="gauge_row" style="width:100%; height:50%">
+                <div style="width:50%; float:left">
+                    <div class="dial_gauge" id="el0" style="display:unset; width:100%">
+                        <div id="Electrolyser0Container" class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=0')">
+                            <div id='Electrolyser0' style="width:50vw"></div><br />
+                        </div>
+                        <div>
+                            <div id="Electrolyser0Slider"></div>
+                            <h2 id="electrolyser0Label" style="text-align:center">Electrolyser 0</h2>
+                        </div>
+                    </div>
+                    <div class="dial_gauge" id="el0_off" style="display:none; width:100%">
+                        <h1 style="text-align:center">Electrolyser 0 is switched off</h1>
+                    </div>
+                </div>
                 <div style="width:50%; float:left">
                     <div class="dial_gauge" id="el1" style="display:unset; width:100%">
                         <div id="Electrolyser1Container" class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=1')">
@@ -455,47 +468,33 @@
                         <h1 style="text-align:center">Electrolyser 1 is switched off</h1>
                     </div>
                 </div>
-                <div style="width:50%; float:left">
-                    <div class="dial_gauge" id="el2" style="display:unset; width:100%">
-                        <div id="Electrolyser2Container" class="dial_gauge_electrolyser" onclick="window.open('el_data.html?device=2')">
-                            <div id='Electrolyser2' style="width:50vw"></div><br />
-                        </div>
-                        <div>
-                            <div id="Electrolyser2Slider"></div>
-                            <h2 id="electrolyser2Label" style="text-align:center">Electrolyser 2</h2>
-                        </div>
-                    </div>
-                    <div class="dial_gauge" id="el2_off" style="display:none; width:100%">
-                        <h1 style="text-align:center">Electrolyser 2 is switched off</h1>
-                    </div>
-                </div>
             </div>
             <div class="gauge_row" style="width:100%; height:50%">
+                <div id="fc0" class="dial_gauge">
+                    <div id="FuelCell0Container" class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=0')">
+                        <div id='FuelCell0' style="width:49vw"></div><br />
+                    </div>
+                    <div>
+                        <h2 id="FuelCell0Label" style="text-align:center">Fuel Cell 1</h2>
+                        <div id="FuelCell0Alarm"></div>
+                    </div>
+                </div>
                 <div id="fc1" class="dial_gauge">
-                    <div id="FuelCell2Container" class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=1')">
+                    <div id="FuelCell1Container" class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=1')">
                         <div id='FuelCell1' style="width:49vw"></div><br />
                     </div>
                     <div>
-                        <h2 id="FuelCell1Label" style="text-align:center">Fuel Cell 1</h2>
-                        <div id="FuelCell1Alarm"></div>
-                    </div>
-                </div>
-                <div id="fc2" class="dial_gauge">
-                    <div id="FuelCell2Container" class="dial_gauge_fuelcell" onclick="window.open('fc_data.html?device=2')">
-                        <div id='FuelCell2' style="width:49vw"></div><br />
-                    </div>
-                    <div>
-                        <h2 id="FuelCell2Label" style="text-align:center">Fuel Cell 2</h2>
-                        <div id="fuelCell2Alarm"></div>
+                        <h2 id="FuelCell1Label" style="text-align:center">Fuel Cell 2</h2>
+                        <div id="fuelCell1Alarm"></div>
                     </div>
                 </div>
             </div>
         </div>
         <div class="linear_gauge" >
-            <div class="linear_gauge_pressure" onclick="window.open('h2_data.html')">
+            <div class="linear_gauge_pressure" onclick="window.open('miscdata.html')">
                 <div id='TankPressure' ></div>
             </div>
-            <div><h2 id="tankPressureLabel" style="text-align:center">H2 (bar)</h2></div>
+            <div><h2 id="tankPressureLabel" style="text-align:center">H2 (<span id="tankPressureLabelValue"></span> bar)</h2></div>
         </div>
     </div>
     <div style="clear:both">

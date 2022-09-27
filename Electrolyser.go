@@ -7,6 +7,8 @@ import (
 	"html"
 	"log"
 	"math"
+	"net"
+	"sync"
 	"time"
 )
 
@@ -29,7 +31,7 @@ type electrolyserEvents struct {
 	codes [31]uint16
 }
 
-type electrolyteLevel int
+type electrolyteLevel byte
 
 const (
 	empty electrolyteLevel = iota
@@ -85,6 +87,7 @@ type electrolyserStatus struct {
 	DryerOutputPressure   jsonFloat32
 	DryerErrors           uint16
 	DryerWarnings         uint16
+	mu                    sync.Mutex
 }
 
 type Electrolyser struct {
@@ -92,13 +95,14 @@ type Electrolyser struct {
 	OnOffTime          time.Time
 	OffDelayTime       time.Time
 	OffRequested       *time.Timer
-	ip                 string
+	ip                 net.IP
 	Client             *modbus.ModbusClient
 	clientConnected    bool
 	lastConnectAttempt time.Time
+	mu                 sync.Mutex
 }
 
-func NewElectrolyser(ip string) *Electrolyser {
+func NewElectrolyser(ip net.IP) *Electrolyser {
 	e := new(Electrolyser)
 	e.OnOffTime = time.Now().Add(0 - (time.Minute * 30))
 	e.OffDelayTime = time.Now()
@@ -108,7 +112,7 @@ func NewElectrolyser(ip string) *Electrolyser {
 	log.Printf("Adding an electrolyser at [%s]\n", ip)
 	var config modbus.ClientConfiguration
 	config.Timeout = 1 * time.Second // 1 second timeout
-	config.URL = "tcp://" + ip + ":502"
+	config.URL = "tcp://" + ip.String() + ":502"
 	if Client, err := modbus.NewClient(&config); err != nil {
 		if err != nil {
 			log.Print("New modbus client error - ", err)
@@ -121,6 +125,8 @@ func NewElectrolyser(ip string) *Electrolyser {
 }
 
 func (e *Electrolyser) GetRate() int {
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
 	r := int(e.status.CurrentProductionRate)
 	if (e.OffRequested != nil) && (r == 60) {
 		return 0
@@ -129,7 +135,7 @@ func (e *Electrolyser) GetRate() int {
 	}
 }
 
-// Read and decode the serial number
+// ReadSerialNumber reads and decodes the serial number
 func (e *Electrolyser) ReadSerialNumber() string {
 	type Codes struct {
 		Site    string
@@ -225,6 +231,7 @@ func (e *Electrolyser) readEvents() {
 		e.clientConnected = false
 		return
 	}
+
 	e.status.Warnings.count = events[0]
 	copy(e.status.Warnings.codes[:], events[1:])
 	events, err = e.Client.ReadRegisters(832, 32, modbus.INPUT_REGISTER)
@@ -241,6 +248,9 @@ func (e *Electrolyser) readEvents() {
 }
 
 func (e *Electrolyser) ReadValues() {
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if !e.CheckConnected() {
 		return
 	}
@@ -253,6 +263,10 @@ func (e *Electrolyser) ReadValues() {
 		e.clientConnected = false
 		return
 	}
+
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
+
 	e.status.StackCurrent = jsonFloat32(values[0])
 	e.status.StackVoltage = jsonFloat32(values[1])
 	e.status.InnerH2Pressure = jsonFloat32(values[2])
@@ -388,6 +402,9 @@ func (e *Electrolyser) ReadValues() {
 }
 
 func (e *Electrolyser) GetSystemState() string {
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
+
 	switch e.status.SystemState {
 	case 0:
 		return "Internal Error, System not Initialized yet"
@@ -575,8 +592,27 @@ func decodeMessage(w uint16) string {
 	}
 }
 
+func (e *Electrolyser) GetSerial() string {
+
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
+
+	return e.status.Serial
+}
+
+func (e *Electrolyser) GetIPString() string {
+
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
+
+	return e.ip.String()
+}
+
 func (e *Electrolyser) GetWarnings() []string {
 	var s []string
+
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
 
 	for w := uint16(0); w < e.status.Warnings.count; w++ {
 		s = append(s, decodeMessage(e.status.Warnings.codes[w]))
@@ -587,6 +623,9 @@ func (e *Electrolyser) GetWarnings() []string {
 func (e *Electrolyser) GetErrors() []string {
 	var s []string
 
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
+
 	for err := uint16(0); err < e.status.Errors.count; err++ {
 		s = append(s, decodeMessage(e.status.Errors.codes[err]))
 	}
@@ -594,6 +633,10 @@ func (e *Electrolyser) GetErrors() []string {
 }
 
 func (e *Electrolyser) getState() string {
+
+	e.status.mu.Lock()
+	defer e.status.mu.Unlock()
+
 	switch e.status.ElState {
 	case 0:
 		return "Halted"
@@ -664,7 +707,7 @@ func (e *Electrolyser) GetDryerWarnings() []string {
 }
 
 func (e *Electrolyser) SendRateToElectrolyser(rate float32) error {
-	err := e.Client.WriteFloat32(1002, float32(rate))
+	err := e.Client.WriteFloat32(1002, rate)
 	if err != nil {
 		log.Print("Error setting production rate - ", err)
 		if err := e.Client.Close(); err != nil {
@@ -979,9 +1022,9 @@ func (e *Electrolyser) StopDryer() {
 	}
 }
 
-func (e *Electrolyser) RebootDryer() {
+func (e *Electrolyser) RebootDryer() error {
 	if !e.CheckConnected() {
-		return
+		return fmt.Errorf("Dryer is not connected")
 	}
 	err := e.Client.WriteRegister(6020, 1)
 	if err != nil {
@@ -991,6 +1034,7 @@ func (e *Electrolyser) RebootDryer() {
 		}
 		e.clientConnected = false
 	}
+	return err
 }
 
 func (e *Electrolyser) GetDryerErrorsHTML() string {

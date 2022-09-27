@@ -6,7 +6,6 @@ This project uses the firefly esm command line interface to control the system c
 */
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -16,18 +15,17 @@ import (
 	"io"
 	"log"
 	"math"
+	"net"
 	"runtime"
 
 	//	"log/syslog"
 	syslog "github.com/RackSec/srslog"
 	"net/http"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 )
 
 const ELECTROLYSERHOLDOFFTIME = time.Minute * 10 // Minimum time after turning off before it is turned on again
@@ -79,12 +77,12 @@ const redirectToMainMenuScript = `
 `
 const SUCCESSJSONRESPONCE = `{"success":true}`
 
-type OnOffBody struct {
-	State bool `json:"state"`
+type OnOffPayload struct {
+	Device uint8 `json:"device"`
+	State  bool  `json:"state"`
 }
 
-var params *JsonSettings
-
+/*
 var RateMap = map[int]int8{
 	0:      0,
 	60:     1,
@@ -238,6 +236,7 @@ var RateMap = map[int]int8{
 	100095: 29,
 	100096: 30,
 }
+*/
 
 func debugPrint(format string, args ...interface{}) {
 	if params.DebugOutput {
@@ -258,47 +257,38 @@ func debugPrint(format string, args ...interface{}) {
 }
 
 type gasStatus struct {
-	FuelCellPressure float64
-	TankPressure     float64
+	FuelCellPressure    float32
+	TankPressure        float64
+	RawFuelCellPressure uint16
+	RawTankPressure     uint16
 }
 
-//type fuelCellStatus struct {
-//	SerialNumber  string
-//	Version       string
-//	OutputPower   float64
-//	OutputVolt    float64
-//	OutputCurrent float64
-//	AnodePress    float64
-//	InletTemp     float64
-//	OutletTemp    float64
-//	State         string
-//	FaultFlagA    string
-//	FaultFlagB    string
-//	FaultFlagC    string
-//	FaultFlagD    string
-//	faultTime     time.Time
-//	clearTime     time.Time
-//	inRestart     bool
-//	numRestarts   int
-//}
+type acStatus struct {
+	ACPower       uint32 `json:"power"`
+	ACCurrent     uint32 `json:"current"`
+	ACVolts       uint16 `json:"volts"`
+	ACPowerFactor uint8  `json:"powerfactor"`
+	ACFrequency   uint16 `json:"frequency"`
+	ACEnergy      uint32 `json:"energy"`
+}
 
 type relayStatus struct {
-	FuelCell1Enable bool
-	FuelCell1Run    bool
-	FuelCell2Enable bool
-	FuelCell2Run    bool
-	Drain           bool
-	Electrolyser1   bool
-	Electrolyser2   bool
-	GasToFuelCell   bool
+	FC0Enable     bool
+	FC0Run        bool
+	FC1Enable     bool
+	FC1Run        bool
+	Spare         bool
+	EL0           bool
+	EL1           bool
+	GasToFuelCell bool
 }
 
 type tdsStatus struct {
-	TdsReading int64
+	TdsReading    float32
+	RawTdsReading uint16
 }
 
 var (
-	executable       string //This is the esm executable to control the Firefly.
 	databaseServer   string
 	databasePort     string
 	databaseName     string
@@ -306,61 +296,26 @@ var (
 	databasePassword string
 	CANInterface     string
 	pDB              *sql.DB
-	esmPrompt        = []byte{27, 91, 51, 50, 109, 13, 70, 73, 82, 69, 70, 76, 89, 27, 91, 51, 57, 109, 32, 62}
-	commandResponse  chan string
-	esmCommand       struct {
-		command *exec.Cmd
-		stdin   io.WriteCloser
-		stdout  io.ReadCloser
-		valid   bool
-		mux     sync.Mutex
-	}
 
 	SystemStatus struct {
-		m      sync.Mutex
-		valid  bool
-		Relays relayStatus
-		//		FuelCells     []*fuelCellStatus
-		Electrolysers []*Electrolyser
-		Gas           gasStatus
-		TDS           tdsStatus
+		m                sync.Mutex
+		valid            bool
+		Relays           relayStatus
+		Electrolysers    []*Electrolyser
+		ElectrolyserLock bool // Prevents electrolysers from being turned off when set
+		Gas              gasStatus
+		TDS              tdsStatus
+		AC               acStatus
+		HP               acStatus
 	}
-
-	canBus                   *CANBus
-	jsonSettings             string
 	electrolyserShutDownTime time.Time
+
+	jsonSettings string
+	params       *JsonSettings
+
+	canBus  *CANBus
+	mbusRTU *ModbusRTUIO
 )
-
-var systemConfig struct {
-	consoleHistory             int64
-	NumDryer                   uint16
-	NumEl                      uint16
-	ElAddresses                string
-	NumFc                      uint16
-	FcAndElOk                  bool
-	IgnoreElState              bool
-	SolarArrayInstalled        bool
-	SolarMeterMax              int16
-	SolarMeterMin              int16
-	SolarAveragingTime         int16
-	SolarMonitorInterval       int16
-	GenH2StatusCheckDelay      int16
-	H2FcPressureMin            int16
-	FcMonitorInterval          int16
-	ElStateQueryWait           int16
-	FcInfoWait                 int16
-	GenH2ElDetectTimeout       int16
-	GenH2ElId                  int16
-	LabjackPrecision           int16
-	MaxDryerTemp               int16
-	MaxElTemp                  int16
-	ProductionRateMinThreshold float32
-	RunFCElId                  int16
-	LogOverwrite               int16
-	SimMode                    int16
-}
-
-var settings Settings
 
 func connectToDatabase() (*sql.DB, error) {
 	if pDB != nil {
@@ -422,286 +377,10 @@ func showElectrolyserProductionRatePage(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func notNumeric(c rune) bool {
-	return !unicode.IsNumber(c) && (c != '-') && (c != '.')
-}
-
 func returnJSONSuccess(w http.ResponseWriter) {
 	if _, err := fmt.Fprintf(w, SUCCESSJSONRESPONCE); err != nil {
 		log.Println(err)
 	}
-}
-
-func getKeyValueLines(text string, valueDelimiter string) []string {
-	lines := strings.Split(text, "\n")
-	var line string
-	var valueLines []string
-	for _, line = range lines {
-		if strings.Contains(line, valueDelimiter) {
-			valueLines = append(valueLines, line)
-		}
-	}
-	return valueLines
-}
-
-func populateGasData(text string) {
-	valueLines := getKeyValueLines(text, ": ")
-	if len(valueLines) > 0 {
-		for _, valueLine := range valueLines {
-			keyValue := strings.Split(valueLine, ":")
-			if len(keyValue) < 2 {
-				return
-			}
-			key := strings.Trim(keyValue[0], " ")
-			value := strings.Trim(keyValue[1], " ")
-			switch key {
-			case "Fuel Cell pressure":
-				SystemStatus.Gas.FuelCellPressure, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 64)
-				SystemStatus.Gas.FuelCellPressure /= convertPSIToBar
-			case "Tank pressure":
-				SystemStatus.Gas.TankPressure, _ = strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 64)
-				SystemStatus.Gas.TankPressure /= convertPSIToBar
-			}
-		}
-	}
-	return
-}
-
-func isOn(val string) bool {
-	if strings.Contains(val, "ON") {
-		return true
-	} else if !strings.Contains(val, "OFF") && !strings.Contains(val, "UNKNOWN") {
-		log.Println("Didn't understand the boolean value", val)
-	}
-	return false
-}
-
-func populateSystemInfo(text string) {
-	valueLines := getKeyValueLines(text, " = ")
-	systemConfig.NumDryer = 0
-	systemConfig.NumFc = 0
-	systemConfig.NumEl = 0
-	if len(valueLines) > 0 {
-		for _, valueLine := range valueLines {
-			keyValue := strings.Split(valueLine, " = ")
-			if len(keyValue) < 2 {
-				return
-			}
-			key := strings.Trim(keyValue[0], " ")
-			value := strings.Trim(keyValue[1], " ")
-			switch key {
-			case "Num_Dryer":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.NumDryer = uint16(n)
-			case "Num_EL":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.NumEl = uint16(n)
-
-			case "Num_FC":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.NumFc = uint16(n)
-			case "EL_Addresses":
-				systemConfig.ElAddresses = value
-			case "FC_and_EL_OK":
-				systemConfig.FcAndElOk = value == "True"
-			case "Ignore_EL_State":
-				systemConfig.IgnoreElState = value == "True"
-			case "Solar_Array_Installed":
-				systemConfig.SolarArrayInstalled = value == "True"
-			case "Solar_Meter_Max":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.SolarMeterMax = int16(n)
-			case "Solar_Meter_Min":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.SolarMeterMin = int16(n)
-			case "Solar_Averaging_Time":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.SolarAveragingTime = int16(n)
-			case "Solar_Monitor_Interval":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.SolarMonitorInterval = int16(n)
-			case "Gen_H2_status_check_delay":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.GenH2StatusCheckDelay = int16(n)
-			case "H2_FC_Pressure_Min":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.H2FcPressureMin = int16(n)
-			case "FC_Monitor_Interval":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.FcMonitorInterval = int16(n)
-			case "EL_State_Query_Wait":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.ElStateQueryWait = int16(n)
-			case "FC_Info_Wait":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.FcInfoWait = int16(n)
-			case "GenH2_EL_Detect_timeout":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.GenH2ElDetectTimeout = int16(n)
-			case "GenH2_El_id":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.GenH2ElId = int16(n)
-			case "Labjack_precision":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.LabjackPrecision = int16(n)
-			case "Max_Dryer_Temp":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.MaxDryerTemp = int16(n)
-			case "Max_EL_Temp":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.MaxElTemp = int16(n)
-			case "Production_rate_min_threshold":
-				f, _ := strconv.ParseFloat(strings.TrimFunc(value, notNumeric), 32)
-				systemConfig.ProductionRateMinThreshold = float32(f)
-			case "RunFC_El_id":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.RunFCElId = int16(n)
-			case "console_history":
-				n, _ := strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 16)
-				systemConfig.consoleHistory = n
-			}
-		}
-	}
-	if systemConfig.NumEl > 0 {
-		addresses := strings.Split(systemConfig.ElAddresses, ",")
-		SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, NewElectrolyser(strings.Trim(addresses[0], " ")))
-		if systemConfig.NumEl > 1 {
-			SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, NewElectrolyser(strings.Trim(addresses[1], " ")))
-		}
-	}
-
-	return
-}
-
-func getSystemInfo() {
-	text, err := sendCommand("conf show")
-	if err != nil {
-		log.Fatal(err)
-	}
-	populateSystemInfo(text)
-}
-
-func populateRelayData(text string) bool {
-	valueLines := getKeyValueLines(text, ": ")
-	type relaysFound struct {
-		enab1 bool
-		run1  bool
-		enab2 bool
-		run2  bool
-		drain bool
-		el1dr bool
-		el2   bool
-		gas   bool
-	}
-
-	relays := relaysFound{false, false, false, false, false, false, false, false}
-	if len(valueLines) > 0 {
-		for _, valueLine := range valueLines {
-			keyValue := strings.Split(valueLine, ":")
-			if len(keyValue) < 2 {
-				return false
-			}
-			key := strings.Trim(keyValue[0], " ")
-			value := strings.Trim(keyValue[1], " ")
-			switch key {
-			//goland:noinspection ALL
-			case "Enab1":
-				relays.enab1 = true
-				SystemStatus.Relays.FuelCell1Enable = isOn(value)
-			case "Run1":
-				relays.run1 = true
-				SystemStatus.Relays.FuelCell1Run = isOn(value)
-			case "Enab2":
-				relays.enab2 = true
-				SystemStatus.Relays.FuelCell2Enable = isOn(value)
-			case "Run2":
-				relays.run2 = true
-				SystemStatus.Relays.FuelCell2Run = isOn(value)
-			case "Drain":
-				relays.drain = true
-				SystemStatus.Relays.Drain = isOn(value)
-			case "El1Dr":
-				relays.el1dr = true
-				SystemStatus.Relays.Electrolyser1 = isOn(value)
-			case "El2":
-				relays.el2 = true
-				SystemStatus.Relays.Electrolyser2 = isOn(value)
-			case "Gas":
-				relays.gas = true
-				SystemStatus.Relays.GasToFuelCell = isOn(value)
-			}
-		}
-	}
-	return relays.gas && relays.el1dr && relays.el2 && relays.drain && relays.enab1 && relays.enab2 && relays.run1 && relays.run2
-}
-
-func populateTdsData(text string) {
-	valueLines := getKeyValueLines(text, ": ")
-	if len(valueLines) > 0 {
-		for _, valueLine := range valueLines {
-			keyValue := strings.Split(valueLine, ":")
-			if len(keyValue) < 2 {
-				return
-			}
-			key := strings.Trim(keyValue[0], " ")
-			value := strings.Trim(keyValue[1], " ")
-			switch key {
-			case "TDS reading":
-				SystemStatus.TDS.TdsReading, _ = strconv.ParseInt(strings.TrimFunc(value, notNumeric), 10, 64)
-			}
-		}
-	}
-	return
-}
-
-// Send the command via the esm command line application
-func sendCommand(commandString string) (string, error) {
-	var responseText string
-
-	// Ensure that the command is allowed to complete before any other command is started.
-	esmCommand.mux.Lock()
-	defer esmCommand.mux.Unlock()
-
-	// Send the command to the esm application
-	_, err := fmt.Fprintln(esmCommand.stdin, commandString)
-	if err != nil {
-		// Log the error
-		log.Println(err)
-		// Return a blank string and the error object
-		return "", err
-	}
-	// Wait for the response text
-	responseText = <-commandResponse
-
-	// Return the response and a nil error to indicate success
-	return responseText, nil
-}
-
-func getGasStatus() {
-	text, err := sendCommand("gas info")
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	populateGasData(text)
-}
-
-func getTdsStatus() {
-	text, err := sendCommand("tds info")
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	populateTdsData(text)
-}
-
-func getRelayStatus() bool {
-	text, err := sendCommand("relay status")
-	if err != nil {
-		log.Println(err)
-		return false
-	}
-	return populateRelayData(text)
 }
 
 /**
@@ -710,7 +389,7 @@ getGasHtmlStatus : return the html rendering of the Gas status from the gasStatu
 func getGasHtmlStatus() (html string) {
 
 	html = fmt.Sprintf(`<table>
-  <tr><td class="label">Fuel Cell Pressure</td><td>%0.2f bar</td><td class="label">Tank Pressure</td><td>%0.1f bar</td></tr>
+  <tr><td class="label">Fuel Cell Pressure</td><td>%0.2f mbar</td><td class="label">Tank Pressure</td><td>%0.1f bar</td></tr>
 </table>`, SystemStatus.Gas.FuelCellPressure, SystemStatus.Gas.TankPressure)
 	return html
 }
@@ -733,15 +412,15 @@ func getRelayHtmlStatus() (html string) {
 	return fmt.Sprintf(`<table><tr><th colspan=8>Relay Status</th></tr><tr>
 <th class="%s">Electrolyser 1</th><th class="%s">Electrolyser 2</th>
 <th class="%s">Gas to Fuel Cell</th><th class="%s">Fuel Cell 1 Enable</th><th class="%s">Fuel Cell 1 Run 1</th>
-<th class="%s">Fuel Cell 2 Enable</th><th class="%s">Fuel Cell 2 Run</th><th class="%s">Drain</th></tr></table>`,
-		booleanToHtmlClass(SystemStatus.Relays.Electrolyser1),
-		booleanToHtmlClass(SystemStatus.Relays.Electrolyser2),
+<th class="%s">Fuel Cell 2 Enable</th><th class="%s">Fuel Cell 2 Run</th><th class="%s">Spare</th></tr></table>`,
+		booleanToHtmlClass(SystemStatus.Relays.EL0),
+		booleanToHtmlClass(SystemStatus.Relays.EL1),
 		booleanToHtmlClass(SystemStatus.Relays.GasToFuelCell),
-		booleanToHtmlClass(SystemStatus.Relays.FuelCell1Enable),
-		booleanToHtmlClass(SystemStatus.Relays.FuelCell1Run),
-		booleanToHtmlClass(SystemStatus.Relays.FuelCell2Enable),
-		booleanToHtmlClass(SystemStatus.Relays.FuelCell2Run),
-		booleanToHtmlClass(SystemStatus.Relays.Drain))
+		booleanToHtmlClass(SystemStatus.Relays.FC0Enable),
+		booleanToHtmlClass(SystemStatus.Relays.FC0Run),
+		booleanToHtmlClass(SystemStatus.Relays.FC1Enable),
+		booleanToHtmlClass(SystemStatus.Relays.FC1Run),
+		booleanToHtmlClass(SystemStatus.Relays.Spare))
 }
 
 /**
@@ -750,7 +429,7 @@ getTdsHtmlStatus : return the html rendering of the Gas status from the gasStatu
 func getTdsHtmlStatus() (html string) {
 
 	html = fmt.Sprintf(`<table>
-  <tr><td class="label">Total Dissolved Solids</td><td>%d ppm</td></tr>
+  <tr><td class="label">Total Dissolved Solids</td><td>%0.1f ppm</td></tr>
 </table>`, SystemStatus.TDS.TdsReading)
 	return html
 }
@@ -759,14 +438,6 @@ func getTdsHtmlStatus() (html string) {
 getStatus : return tha status page showing the complete system status
 */
 func getStatus(w http.ResponseWriter, _ *http.Request) {
-
-	if !getRelayStatus() {
-		ReturnJSONErrorString(w, "status", `<head><title>Firefly Status Error</title></head>
-<body><h1>ERROR fetching relay status.</h1><br />
-<h3>One or more relays could not be identified in the "relay status" command.</h3>
-</body></html>`, http.StatusInternalServerError, true)
-		return
-	}
 
 	if _, err := fmt.Fprintf(w, `<html>
   <head>
@@ -873,7 +544,7 @@ func getDryerJsonStatus(w http.ResponseWriter, r *http.Request) {
 		getStatus(w, r)
 		return
 	}
-	bytesArray, err := json.Marshal(SystemStatus.Electrolysers[device].status)
+	bytesArray, err := json.Marshal(&SystemStatus.Electrolysers[device].status)
 	if err != nil {
 		if _, err := fmt.Fprint(w, errorToJson(err)); err != nil {
 			log.Print(err)
@@ -888,15 +559,14 @@ func getDryerJsonStatus(w http.ResponseWriter, r *http.Request) {
 Return the current system status
 */
 func getSystemStatus() {
-	if !getRelayStatus() {
-		SystemStatus.valid = false
-		return
-	}
+	mbusRTU.getRelayStatus()
+	mbusRTU.getACStatus()
+
 	SystemStatus.m.Lock()
 	defer SystemStatus.m.Unlock()
 
-	getGasStatus()
-	getTdsStatus()
+	mbusRTU.getGasStatus()
+	mbusRTU.getTdsStatus()
 
 	for device := range SystemStatus.Electrolysers {
 
@@ -904,9 +574,9 @@ func getSystemStatus() {
 		// Check the power relay to see if this electrolyser has power
 		switch device {
 		case 0:
-			ElectrolyserOn = SystemStatus.Relays.Electrolyser1
+			ElectrolyserOn = SystemStatus.Relays.EL0
 		case 1:
-			ElectrolyserOn = SystemStatus.Relays.Electrolyser2
+			ElectrolyserOn = SystemStatus.Relays.EL1
 		default:
 			log.Println("invalid electrolyser in getSystemStatus")
 		}
@@ -943,75 +613,78 @@ func logStatus() {
 	}
 
 	var params struct {
-		el1Rate             sql.NullInt64
-		el1ElectrolyteLevel sql.NullString
-		el1ElectrolyteTemp  sql.NullFloat64
-		el1State            sql.NullInt32
-		el1H2Flow           sql.NullFloat64
-		el1H2InnerPressure  sql.NullFloat64
-		el1H2OuterPressure  sql.NullFloat64
-		el1StackVoltage     sql.NullFloat64
-		el1StackCurrent     sql.NullFloat64
-		el1SystemState      sql.NullInt32
-		el1WaterPressure    sql.NullFloat64
+		el0Rate             sql.NullInt16
+		el0ElectrolyteLevel sql.NullByte
+		el0ElectrolyteTemp  sql.NullInt16
+		el0State            sql.NullByte
+		el0H2Flow           sql.NullInt16
+		el0H2InnerPressure  sql.NullInt16
+		el0H2OuterPressure  sql.NullInt16
+		el0StackVoltage     sql.NullInt16
+		el0StackCurrent     sql.NullInt16
+		el0SystemState      sql.NullByte
+		el0WaterPressure    sql.NullInt16
 
-		dr1Temp0          sql.NullFloat64
-		dr1Temp1          sql.NullFloat64
-		dr1Temp2          sql.NullFloat64
-		dr1Temp3          sql.NullFloat64
-		dr1InputPressure  sql.NullFloat64
-		dr1OutputPressure sql.NullFloat64
-		dr1Warning        sql.NullString
-		dr1Error          sql.NullString
+		el1Rate             sql.NullInt16
+		el1ElectrolyteLevel sql.NullByte
+		el1ElectrolyteTemp  sql.NullInt16
+		el1State            sql.NullByte
+		el1H2Flow           sql.NullInt16
+		el1H2InnerPressure  sql.NullInt16
+		el1H2OuterPressure  sql.NullInt16
+		el1StackVoltage     sql.NullInt16
+		el1StackCurrent     sql.NullInt16
+		el1SystemState      sql.NullByte
+		el1WaterPressure    sql.NullInt16
 
-		el2Rate             sql.NullInt64
-		el2ElectrolyteLevel sql.NullString
-		el2ElectrolyteTemp  sql.NullFloat64
-		el2State            sql.NullInt32
-		el2H2Flow           sql.NullFloat64
-		el2H2InnerPressure  sql.NullFloat64
-		el2H2OuterPressure  sql.NullFloat64
-		el2StackVoltage     sql.NullFloat64
-		el2StackCurrent     sql.NullFloat64
-		el2SystemState      sql.NullInt32
-		el2WaterPressure    sql.NullFloat64
+		drTemp0          sql.NullInt16
+		drTemp1          sql.NullInt16
+		drTemp2          sql.NullInt16
+		drTemp3          sql.NullInt16
+		drInputPressure  sql.NullInt16
+		drOutputPressure sql.NullInt16
+		drWarning        sql.NullString
+		drError          sql.NullString
 
-		dr2Temp0          sql.NullFloat64
-		dr2Temp1          sql.NullFloat64
-		dr2Temp2          sql.NullFloat64
-		dr2Temp3          sql.NullFloat64
-		dr2InputPressure  sql.NullFloat64
-		dr2OutputPressure sql.NullFloat64
-		dr2Warning        sql.NullString
-		dr2Error          sql.NullString
+		fc0State         sql.NullByte
+		fc0AnodePressure sql.NullInt16
+		fc0FaultFlagA    uint32
+		fc0FaultFlagB    uint32
+		fc0FaultFlagC    uint32
+		fc0FaultFlagD    uint32
+		fc0InletTemp     sql.NullInt16
+		fc0OutletTemp    sql.NullInt16
+		fc0OutputPower   sql.NullInt16
+		fc0OutputCurrent sql.NullInt16
+		fc0OutputVoltage sql.NullInt16
 
-		fc1State         sql.NullString
-		fc1AnodePressure sql.NullFloat64
+		fc1State         sql.NullByte
+		fc1AnodePressure sql.NullInt16
 		fc1FaultFlagA    uint32
 		fc1FaultFlagB    uint32
 		fc1FaultFlagC    uint32
 		fc1FaultFlagD    uint32
-		fc1InletTemp     sql.NullFloat64
-		fc1OutletTemp    sql.NullFloat64
-		fc1OutputPower   int16
-		fc1OutputCurrent sql.NullFloat64
-		fc1OutputVoltage sql.NullFloat64
-
-		fc2State         sql.NullString
-		fc2AnodePressure sql.NullFloat64
-		fc2FaultFlagA    uint32
-		fc2FaultFlagB    uint32
-		fc2FaultFlagC    uint32
-		fc2FaultFlagD    uint32
-		fc2InletTemp     sql.NullFloat64
-		fc2OutletTemp    sql.NullFloat64
-		fc2OutputPower   int16
-		fc2OutputCurrent sql.NullFloat64
-		fc2OutputVoltage sql.NullFloat64
+		fc1InletTemp     sql.NullInt16
+		fc1OutletTemp    sql.NullInt16
+		fc1OutputPower   sql.NullInt16
+		fc1OutputCurrent sql.NullInt16
+		fc1OutputVoltage sql.NullInt16
 	}
 
 	SystemStatus.m.Lock()
 	defer SystemStatus.m.Unlock()
+
+	params.el0Rate.Valid = false
+	params.el0ElectrolyteLevel.Valid = false
+	params.el0ElectrolyteTemp.Valid = false
+	params.el0State.Valid = false
+	params.el0H2Flow.Valid = false
+	params.el0H2InnerPressure.Valid = false
+	params.el0H2OuterPressure.Valid = false
+	params.el0StackVoltage.Valid = false
+	params.el0StackCurrent.Valid = false
+	params.el0SystemState.Valid = false
+	params.el0WaterPressure.Valid = false
 
 	params.el1Rate.Valid = false
 	params.el1ElectrolyteLevel.Valid = false
@@ -1025,36 +698,21 @@ func logStatus() {
 	params.el1SystemState.Valid = false
 	params.el1WaterPressure.Valid = false
 
-	params.el2Rate.Valid = false
-	params.el2ElectrolyteLevel.Valid = false
-	params.el2ElectrolyteTemp.Valid = false
-	params.el2State.Valid = false
-	params.el2H2Flow.Valid = false
-	params.el2H2InnerPressure.Valid = false
-	params.el2H2OuterPressure.Valid = false
-	params.el2StackVoltage.Valid = false
-	params.el2StackCurrent.Valid = false
-	params.el2SystemState.Valid = false
-	params.el2WaterPressure.Valid = false
+	params.drTemp0.Valid = false
+	params.drTemp1.Valid = false
+	params.drTemp2.Valid = false
+	params.drTemp3.Valid = false
+	params.drInputPressure.Valid = false
+	params.drOutputPressure.Valid = false
+	params.drWarning.Valid = false
+	params.drError.Valid = false
 
-	params.dr1Temp0.Valid = false
-	params.dr1Temp1.Valid = false
-	params.dr1Temp2.Valid = false
-	params.dr1Temp3.Valid = false
-	params.dr1InputPressure.Valid = false
-	params.dr1OutputPressure.Valid = false
-	params.dr1Warning.Valid = false
-	params.dr1Error.Valid = false
-
-	params.dr2Temp0.Valid = false
-	params.dr2Temp1.Valid = false
-	params.dr2Temp2.Valid = false
-	params.dr2Temp3.Valid = false
-	params.dr2InputPressure.Valid = false
-	params.dr2OutputPressure.Valid = false
-	params.dr2Warning.Valid = false
-	params.dr2Error.Valid = false
-
+	params.fc0State.Valid = false
+	params.fc0AnodePressure.Valid = false
+	params.fc0InletTemp.Valid = false
+	params.fc0OutletTemp.Valid = false
+	params.fc0OutputCurrent.Valid = false
+	params.fc0OutputVoltage.Valid = false
 	params.fc1State.Valid = false
 	params.fc1AnodePressure.Valid = false
 	params.fc1InletTemp.Valid = false
@@ -1062,210 +720,172 @@ func logStatus() {
 	params.fc1OutputCurrent.Valid = false
 	params.fc1OutputVoltage.Valid = false
 
-	params.fc2State.Valid = false
-	params.fc2AnodePressure.Valid = false
-	params.fc2InletTemp.Valid = false
-	params.fc2OutletTemp.Valid = false
-	params.fc2OutputCurrent.Valid = false
-	params.fc2OutputVoltage.Valid = false
-
 	if len(SystemStatus.Electrolysers) > 0 {
-		if SystemStatus.Relays.Electrolyser1 {
-			params.el1SystemState.Int32 = int32(SystemStatus.Electrolysers[0].status.SystemState)
+		if SystemStatus.Relays.EL0 {
+			params.el0SystemState.Byte = uint8(SystemStatus.Electrolysers[0].status.SystemState)
+			params.el0SystemState.Valid = true
+			params.el0ElectrolyteLevel.Byte = byte(SystemStatus.Electrolysers[0].status.ElectrolyteLevel)
+			params.el0ElectrolyteLevel.Valid = true
+			params.el0H2Flow.Int16 = int16(SystemStatus.Electrolysers[0].status.H2Flow * 10)
+			params.el0H2Flow.Valid = true
+			params.el0ElectrolyteTemp.Int16 = int16(SystemStatus.Electrolysers[0].status.ElectrolyteTemp * 10)
+			params.el0ElectrolyteTemp.Valid = true
+			params.el0State.Byte = uint8(SystemStatus.Electrolysers[0].status.ElState)
+			params.el0State.Valid = true
+			params.el0H2InnerPressure.Int16 = int16(SystemStatus.Electrolysers[0].status.InnerH2Pressure * 10)
+			params.el0H2InnerPressure.Valid = true
+			params.el0H2OuterPressure.Int16 = int16(SystemStatus.Electrolysers[0].status.OuterH2Pressure * 10)
+			params.el0H2OuterPressure.Valid = true
+			params.el0Rate.Int16 = int16(SystemStatus.Electrolysers[0].GetRate() * 10)
+			params.el0Rate.Valid = true
+			params.el0StackVoltage.Int16 = int16(SystemStatus.Electrolysers[0].status.StackVoltage * 10)
+			params.el0StackVoltage.Valid = true
+			params.el0StackCurrent.Int16 = int16(SystemStatus.Electrolysers[0].status.StackCurrent * 10)
+			params.el0StackCurrent.Valid = true
+			params.el0WaterPressure.Int16 = int16(SystemStatus.Electrolysers[0].status.WaterPressure * 10)
+			params.el0WaterPressure.Valid = true
+
+		} else {
+			params.el0SystemState.Byte = 0xff
+			params.el0SystemState.Valid = true
+		}
+	}
+	if len(SystemStatus.Electrolysers) > 1 {
+		if SystemStatus.Relays.EL1 {
+			params.el1SystemState.Byte = uint8(SystemStatus.Electrolysers[1].status.SystemState)
 			params.el1SystemState.Valid = true
-			params.el1ElectrolyteLevel.String = SystemStatus.Electrolysers[0].status.ElectrolyteLevel.String()
+			params.el1ElectrolyteLevel.Byte = byte(SystemStatus.Electrolysers[1].status.ElectrolyteLevel)
 			params.el1ElectrolyteLevel.Valid = true
-			params.el1H2Flow.Float64 = float64(SystemStatus.Electrolysers[0].status.H2Flow)
+			params.el1H2Flow.Int16 = int16(SystemStatus.Electrolysers[1].status.H2Flow * 10)
 			params.el1H2Flow.Valid = true
-			params.el1ElectrolyteTemp.Float64 = float64(SystemStatus.Electrolysers[0].status.ElectrolyteTemp)
+			params.el1ElectrolyteTemp.Int16 = int16(SystemStatus.Electrolysers[1].status.ElectrolyteTemp * 10)
 			params.el1ElectrolyteTemp.Valid = true
-			params.el1State.Int32 = int32(SystemStatus.Electrolysers[0].status.ElState)
+			params.el1State.Byte = uint8(SystemStatus.Electrolysers[1].status.ElState)
 			params.el1State.Valid = true
-			params.el1H2InnerPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.InnerH2Pressure)
+			params.el1H2InnerPressure.Int16 = int16(SystemStatus.Electrolysers[1].status.InnerH2Pressure * 10)
 			params.el1H2InnerPressure.Valid = true
-			params.el1H2OuterPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.OuterH2Pressure)
+			params.el1H2OuterPressure.Int16 = int16(SystemStatus.Electrolysers[1].status.OuterH2Pressure * 10)
 			params.el1H2OuterPressure.Valid = true
-			params.el1Rate.Int64 = int64(SystemStatus.Electrolysers[0].GetRate())
+			params.el1Rate.Int16 = int16(SystemStatus.Electrolysers[1].GetRate() * 10)
 			params.el1Rate.Valid = true
-			params.el1StackVoltage.Float64 = float64(SystemStatus.Electrolysers[0].status.StackVoltage)
+			params.el1StackVoltage.Int16 = int16(SystemStatus.Electrolysers[1].status.StackVoltage * 10)
 			params.el1StackVoltage.Valid = true
-			params.el1StackCurrent.Float64 = float64(SystemStatus.Electrolysers[0].status.StackCurrent)
+			params.el1StackCurrent.Int16 = int16(SystemStatus.Electrolysers[1].status.StackCurrent * 10)
 			params.el1StackCurrent.Valid = true
-			params.el1WaterPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.WaterPressure)
+			params.el1WaterPressure.Int16 = int16(SystemStatus.Electrolysers[1].status.WaterPressure * 10)
 			params.el1WaterPressure.Valid = true
-			params.dr1InputPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerInputPressure)
-			params.dr1InputPressure.Valid = true
-			params.dr1OutputPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerOutputPressure)
-			params.dr1OutputPressure.Valid = true
-			params.dr1Temp0.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp1)
-			params.dr1Temp0.Valid = true
-			params.dr1Temp1.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp2)
-			params.dr1Temp1.Valid = true
-			params.dr1Temp2.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp3)
-			params.dr1Temp2.Valid = true
-			params.dr1Temp3.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp4)
-			params.dr1Temp3.Valid = true
-			params.dr1Warning.String = SystemStatus.Electrolysers[0].GetDryerWarningText()
-			params.dr1Warning.Valid = true
-			params.dr1Error.String = SystemStatus.Electrolysers[0].GetDryerErrorText()
-			params.dr1Error.Valid = true
-
 		} else {
-			params.el1SystemState.Int32 = -1
+			params.el1SystemState.Byte = 0xff
 			params.el1SystemState.Valid = true
 		}
 	}
-	if len(SystemStatus.Electrolysers) > 1 {
-		if SystemStatus.Relays.Electrolyser2 {
-			params.el2SystemState.Int32 = int32(SystemStatus.Electrolysers[1].status.SystemState)
-			params.el2SystemState.Valid = true
-			params.el2ElectrolyteLevel.String = SystemStatus.Electrolysers[1].status.ElectrolyteLevel.String()
-			params.el2ElectrolyteLevel.Valid = true
-			params.el2H2Flow.Float64 = float64(SystemStatus.Electrolysers[1].status.H2Flow)
-			params.el2H2Flow.Valid = true
-			params.el2ElectrolyteTemp.Float64 = float64(SystemStatus.Electrolysers[1].status.ElectrolyteTemp)
-			params.el2ElectrolyteTemp.Valid = true
-			params.el2State.Int32 = int32(SystemStatus.Electrolysers[1].status.ElState)
-			params.el2State.Valid = true
-			params.el2H2InnerPressure.Float64 = float64(SystemStatus.Electrolysers[1].status.InnerH2Pressure)
-			params.el2H2InnerPressure.Valid = true
-			params.el2H2OuterPressure.Float64 = float64(SystemStatus.Electrolysers[1].status.OuterH2Pressure)
-			params.el2H2OuterPressure.Valid = true
-			params.el2Rate.Int64 = int64(SystemStatus.Electrolysers[1].GetRate())
-			params.el2Rate.Valid = true
-			params.el2StackVoltage.Float64 = float64(SystemStatus.Electrolysers[1].status.StackVoltage)
-			params.el2StackVoltage.Valid = true
-			params.el2StackCurrent.Float64 = float64(SystemStatus.Electrolysers[1].status.StackCurrent)
-			params.el2StackCurrent.Valid = true
-			params.el2WaterPressure.Float64 = float64(SystemStatus.Electrolysers[1].status.WaterPressure)
-			params.el2WaterPressure.Valid = true
-		} else {
-			params.el2SystemState.Int32 = -1
-			params.el2SystemState.Valid = true
-		}
-	}
 	if len(SystemStatus.Electrolysers) > 0 {
-		if SystemStatus.Relays.Electrolyser1 {
-			params.dr1InputPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerInputPressure)
-			params.dr1InputPressure.Valid = true
-			params.dr1OutputPressure.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerOutputPressure)
-			params.dr1OutputPressure.Valid = true
-			params.dr1Temp0.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp1)
-			params.dr1Temp0.Valid = true
-			params.dr1Temp1.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp2)
-			params.dr1Temp1.Valid = true
-			params.dr1Temp2.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp3)
-			params.dr1Temp2.Valid = true
-			params.dr1Temp3.Float64 = float64(SystemStatus.Electrolysers[0].status.DryerTemp4)
-			params.dr1Temp3.Valid = true
-			params.dr1Warning.String = SystemStatus.Electrolysers[0].GetDryerWarningText()
-			params.dr1Warning.Valid = true
-			params.dr1Error.String = SystemStatus.Electrolysers[0].GetDryerErrorText()
-			params.dr1Error.Valid = true
-		}
-	}
-	if len(SystemStatus.Electrolysers) > 1 {
-		if SystemStatus.Relays.Electrolyser2 {
-			params.dr2InputPressure.Float64 = float64(SystemStatus.Electrolysers[1].status.DryerInputPressure)
-			params.dr2InputPressure.Valid = true
-			params.dr2OutputPressure.Float64 = float64(SystemStatus.Electrolysers[1].status.DryerOutputPressure)
-			params.dr2OutputPressure.Valid = true
-			params.dr2Temp0.Float64 = float64(SystemStatus.Electrolysers[1].status.DryerTemp1)
-			params.dr2Temp0.Valid = true
-			params.dr2Temp1.Float64 = float64(SystemStatus.Electrolysers[1].status.DryerTemp2)
-			params.dr2Temp1.Valid = true
-			params.dr2Temp2.Float64 = float64(SystemStatus.Electrolysers[1].status.DryerTemp3)
-			params.dr2Temp2.Valid = true
-			params.dr2Temp3.Float64 = float64(SystemStatus.Electrolysers[1].status.DryerTemp4)
-			params.dr2Temp3.Valid = true
-			params.dr2Warning.String = SystemStatus.Electrolysers[1].GetDryerWarningText()
-			params.dr2Warning.Valid = true
-			params.dr2Error.String = SystemStatus.Electrolysers[1].GetDryerErrorText()
-			params.dr2Error.Valid = true
+		if SystemStatus.Relays.EL0 {
+			params.drInputPressure.Int16 = int16(SystemStatus.Electrolysers[0].status.DryerInputPressure * 10)
+			params.drInputPressure.Valid = true
+			params.drOutputPressure.Int16 = int16(SystemStatus.Electrolysers[0].status.DryerOutputPressure * 10)
+			params.drOutputPressure.Valid = true
+			params.drTemp0.Int16 = int16(SystemStatus.Electrolysers[0].status.DryerTemp1 * 10)
+			params.drTemp0.Valid = true
+			params.drTemp1.Int16 = int16(SystemStatus.Electrolysers[0].status.DryerTemp2 * 10)
+			params.drTemp1.Valid = true
+			params.drTemp2.Int16 = int16(SystemStatus.Electrolysers[0].status.DryerTemp3 * 10)
+			params.drTemp2.Valid = true
+			params.drTemp3.Int16 = int16(SystemStatus.Electrolysers[0].status.DryerTemp4 * 10)
+			params.drTemp3.Valid = true
+			params.drWarning.String = SystemStatus.Electrolysers[0].GetDryerWarningText()
+			params.drWarning.Valid = true
+			params.drError.String = SystemStatus.Electrolysers[0].GetDryerErrorText()
+			params.drError.Valid = true
 		}
 	}
 	if fc, found := canBus.fuelCell[0]; found {
-		if SystemStatus.Relays.FuelCell1Enable {
-			params.fc1AnodePressure.Float64 = float64(fc.getAnodePressure())
+		if SystemStatus.Relays.FC0Enable {
+			params.fc0AnodePressure.Int16 = int16(fc.AnodePressure) // millibar x 10
+			params.fc0AnodePressure.Valid = true
+			params.fc0FaultFlagA = fc.getFaultA()
+			params.fc0FaultFlagB = fc.getFaultB()
+			params.fc0FaultFlagC = fc.getFaultC()
+			params.fc0FaultFlagD = fc.getFaultD()
+			params.fc0InletTemp.Int16 = int16(fc.getInletTemp() * 10)
+			params.fc0InletTemp.Valid = true
+			params.fc0OutletTemp.Int16 = int16(fc.getOutletTemp() * 10)
+			params.fc0OutletTemp.Valid = true
+			params.fc0OutputCurrent.Int16 = int16(fc.getOutputCurrent() * 100)
+			params.fc0OutputCurrent.Valid = true
+			params.fc0OutputVoltage.Int16 = int16(fc.getOutputVolts() * 10)
+			params.fc0OutputVoltage.Valid = true
+			params.fc0OutputPower.Int16 = fc.getOutputPower()
+			params.fc0OutputPower.Valid = true
+			params.fc0State.Byte = fc.GetStateCode()
+			params.fc0State.Valid = true
+		} else {
+			params.fc0State.Byte = 0
+			params.fc0State.Valid = true
+		}
+	}
+	if fc, found := canBus.fuelCell[1]; found {
+		if SystemStatus.Relays.FC1Enable {
+			params.fc1AnodePressure.Int16 = int16(fc.AnodePressure) // millibar
 			params.fc1AnodePressure.Valid = true
 			params.fc1FaultFlagA = fc.getFaultA()
 			params.fc1FaultFlagB = fc.getFaultB()
 			params.fc1FaultFlagC = fc.getFaultC()
 			params.fc1FaultFlagD = fc.getFaultD()
-			params.fc1InletTemp.Float64 = float64(fc.getInletTemp())
+			params.fc1InletTemp.Int16 = int16(fc.getInletTemp() * 10)
 			params.fc1InletTemp.Valid = true
-			params.fc1OutletTemp.Float64 = float64(fc.getOutletTemp())
+			params.fc1OutletTemp.Int16 = int16(fc.getOutletTemp() * 10)
 			params.fc1OutletTemp.Valid = true
-			params.fc1OutputCurrent.Float64 = float64(fc.getOutputCurrent())
+			params.fc1OutputCurrent.Int16 = int16(fc.getOutputCurrent() * 10)
 			params.fc1OutputCurrent.Valid = true
-			params.fc1OutputVoltage.Float64 = float64(fc.getOutputVolts())
+			params.fc1OutputVoltage.Int16 = int16(fc.getOutputVolts() * 10)
 			params.fc1OutputVoltage.Valid = true
-			params.fc1OutputPower = fc.getOutputPower()
-			params.fc1State.String = fc.GetState()
+			params.fc1OutputPower.Int16 = fc.getOutputPower() * 10
+			params.fc1OutputPower.Valid = true
+			params.fc1State.Byte = fc.GetStateCode()
 			params.fc1State.Valid = true
 		} else {
-			params.fc1State.String = "Powered Down"
+			params.fc1State.Byte = 0
 			params.fc1State.Valid = true
-		}
-	}
-	if fc, found := canBus.fuelCell[1]; found {
-		if SystemStatus.Relays.FuelCell2Enable {
-			params.fc2AnodePressure.Float64 = float64(fc.AnodePressure)
-			params.fc2AnodePressure.Valid = true
-			params.fc2FaultFlagA = fc.getFaultA()
-			params.fc2FaultFlagB = fc.getFaultB()
-			params.fc2FaultFlagC = fc.getFaultC()
-			params.fc2FaultFlagD = fc.getFaultD()
-			params.fc2InletTemp.Float64 = float64(fc.getInletTemp())
-			params.fc2InletTemp.Valid = true
-			params.fc2OutletTemp.Float64 = float64(fc.getOutletTemp())
-			params.fc2OutletTemp.Valid = true
-			params.fc2OutputCurrent.Float64 = float64(fc.getOutputCurrent())
-			params.fc2OutputCurrent.Valid = true
-			params.fc2OutputVoltage.Float64 = float64(fc.getOutputVolts())
-			params.fc2OutputVoltage.Valid = true
-			params.fc1OutputPower = fc.getOutputPower()
-			params.fc2State.String = fc.GetState()
-			params.fc2State.Valid = true
-		} else {
-			params.fc2State.String = "Powered Down"
-			params.fc2State.Valid = true
 		}
 	}
 
 	strCommand := `INSERT INTO firefly.logging(
-            el1Rate, el1ElectrolyteLevel, el1ElectrolyteTemp, el1StateCode, el1H2Flow, el1H2InnerPressure, el1H2OuterPressure, el1StackVoltage, el1StackCurrent, el1SystemStateCode, el1WaterPressure, 
-            dr1Temp0, dr1Temp1, dr1Temp2, dr1Temp3, dr1InputPressure, dr1OutputPressure, dr1Warning, dr1Error, 
-            el2Rate, el2ElectrolyteLevel, el2ElectrolyteTemp, el2StateCode, el2H2Flow, el2H2InnerPressure, el2H2OuterPressure, el2StackVoltage, el2StackCurrent, el2SystemStateCode, el2WaterPressure,
-            dr2Temp0, dr2Temp1, dr2Temp2, dr2Temp3, dr2InputPressure, dr2OutputPressure, dr2Warning, dr2Error,
+            el0Rate, el0ElectrolyteLevel, el0ElectrolyteTemp, el0StateCode, el0H2Flow, el0H2InnerPressure, el0H2OuterPressure, el0StackVoltage, el0StackCurrent, el0SystemStateCode, el0WaterPressure, 
+            drTemp0, drTemp1, drTemp2, drTemp3, drInputPressure, drOutputPressure, drWarning, drError, 
+            el1Rate, el1ElectrolyteLevel, el1ElectrolyteTemp, el1StateCode, el1H2Flow, el1H2InnerPressure, el1H2OuterPressure, el1StackVoltage, el1StackCurrent, el1SystemStateCode, el1WaterPressure,
+            fc0State, fc0AnodePressure, fc0FaultFlagA, fc0FaultFlagB, fc0FaultFlagC, fc0FaultFlagD, fc0InletTemp, fc0OutletTemp, fc0OutputPower, fc0OutputCurrent, fc0OutputVoltage,
             fc1State, fc1AnodePressure, fc1FaultFlagA, fc1FaultFlagB, fc1FaultFlagC, fc1FaultFlagD, fc1InletTemp, fc1OutletTemp, fc1OutputPower, fc1OutputCurrent, fc1OutputVoltage,
-            fc2State, fc2AnodePressure, fc2FaultFlagA, fc2FaultFlagB, fc2FaultFlagC, fc2FaultFlagD, fc2InletTemp, fc2OutletTemp, fc2OutputPower, fc2OutputCurrent, fc2OutputVoltage,
             gasFuelCellPressure, gasTankPressure,
             totalDissolvedSolids,
-            relayGas, relayFuelCell1Enable, relayFuelCell1Run, relayFuelCell2Enable, relayFuelCell2Run, relayEl1Power, relayEl2Power, relayDrain)
+            relayGas, relayFuelCell0Enable, relayFuelCell0Run, relayFuelCell1Enable, relayFuelCell1Run, relayEl0Power, relayEl1Power, relaySpare,
+            ACPower, ACVolts, ACCurrent, ACFrequency, ACPowerFactor, ACEnergy,
+            HPPower, HPVolts, HPCurrent, HPFrequency, HPPowerFactor, HPEnergy)
 	VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-	       ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 	       ?, ?,
 	       ?,
-	       ?, ?, ?, ?, ?, ?, ?, ?);`
+	       ?, ?, ?, ?, ?, ?, ?, ?,
+	       ?, ?, ?, ?, ?, ?,
+	       ?, ?, ?, ?, ?, ?);`
 
 	_, err = pDB.Exec(strCommand,
+		params.el0Rate, params.el0ElectrolyteLevel, params.el0ElectrolyteTemp, params.el0State, params.el0H2Flow, params.el0H2InnerPressure, params.el0H2OuterPressure, params.el0StackVoltage, params.el0StackCurrent, params.el0SystemState, params.el0WaterPressure,
+		params.drTemp0, params.drTemp1, params.drTemp2, params.drTemp3, params.drInputPressure, params.drOutputPressure, params.drWarning, params.drError,
 		params.el1Rate, params.el1ElectrolyteLevel, params.el1ElectrolyteTemp, params.el1State, params.el1H2Flow, params.el1H2InnerPressure, params.el1H2OuterPressure, params.el1StackVoltage, params.el1StackCurrent, params.el1SystemState, params.el1WaterPressure,
-		params.dr1Temp0, params.dr1Temp1, params.dr1Temp2, params.dr1Temp3, params.dr1InputPressure, params.dr1OutputPressure, params.dr1Warning, params.dr1Error,
-		params.el2Rate, params.el2ElectrolyteLevel, params.el2ElectrolyteTemp, params.el2State, params.el2H2Flow, params.el2H2InnerPressure, params.el2H2OuterPressure, params.el2StackVoltage, params.el2StackCurrent, params.el2SystemState, params.el2WaterPressure,
-		params.dr2Temp0, params.dr2Temp1, params.dr2Temp2, params.dr2Temp3, params.dr2InputPressure, params.dr2OutputPressure, params.dr2Warning, params.dr2Error,
+		params.fc0State, params.fc0AnodePressure, params.fc0FaultFlagA, params.fc0FaultFlagB, params.fc0FaultFlagC, params.fc0FaultFlagD, params.fc0InletTemp, params.fc0OutletTemp, params.fc0OutputPower, params.fc0OutputCurrent, params.fc0OutputVoltage,
 		params.fc1State, params.fc1AnodePressure, params.fc1FaultFlagA, params.fc1FaultFlagB, params.fc1FaultFlagC, params.fc1FaultFlagD, params.fc1InletTemp, params.fc1OutletTemp, params.fc1OutputPower, params.fc1OutputCurrent, params.fc1OutputVoltage,
-		params.fc2State, params.fc2AnodePressure, params.fc2FaultFlagA, params.fc2FaultFlagB, params.fc2FaultFlagC, params.fc2FaultFlagD, params.fc2InletTemp, params.fc2OutletTemp, params.fc2OutputPower, params.fc2OutputCurrent, params.fc2OutputVoltage,
-		SystemStatus.Gas.FuelCellPressure, SystemStatus.Gas.TankPressure,
-		SystemStatus.TDS.TdsReading,
-		SystemStatus.Relays.GasToFuelCell, SystemStatus.Relays.FuelCell1Enable, SystemStatus.Relays.FuelCell1Run, SystemStatus.Relays.FuelCell2Enable, SystemStatus.Relays.FuelCell2Run, SystemStatus.Relays.Electrolyser1, SystemStatus.Relays.Electrolyser2, SystemStatus.Relays.Drain)
+		SystemStatus.Gas.RawFuelCellPressure, SystemStatus.Gas.RawTankPressure,
+		SystemStatus.TDS.RawTdsReading,
+		SystemStatus.Relays.GasToFuelCell, SystemStatus.Relays.FC0Enable, SystemStatus.Relays.FC0Run, SystemStatus.Relays.FC1Enable, SystemStatus.Relays.FC1Run, SystemStatus.Relays.EL0, SystemStatus.Relays.EL1, SystemStatus.Relays.Spare,
+		SystemStatus.AC.ACPower, SystemStatus.AC.ACVolts, SystemStatus.AC.ACCurrent, SystemStatus.AC.ACFrequency, SystemStatus.AC.ACPowerFactor, SystemStatus.AC.ACEnergy,
+		SystemStatus.HP.ACPower, SystemStatus.HP.ACVolts, SystemStatus.HP.ACCurrent, SystemStatus.HP.ACFrequency, SystemStatus.HP.ACPowerFactor, SystemStatus.HP.ACEnergy)
 
 	if err != nil {
-		log.Printf("Error writing inverter values to the database - %s", err)
+		log.Printf("Error writing values to the database - %s", err)
 		_ = pDB.Close()
 		pDB = nil
 	}
@@ -1295,15 +915,15 @@ func getMinJsonStatus() string {
 	var minStatus struct {
 		Electrolysers []*minElectrolyserStatus
 		FuelCells     []*minFuelCellStatus
-		Gas           float32
+		Gas           float64
 	}
-	minStatus.Gas = float32(SystemStatus.Gas.TankPressure)
+	minStatus.Gas = SystemStatus.Gas.TankPressure
 	for elnum, el := range SystemStatus.Electrolysers {
 		minEl := new(minElectrolyserStatus)
 		if elnum == 0 {
-			minEl.On = SystemStatus.Relays.Electrolyser1
+			minEl.On = SystemStatus.Relays.EL0
 		} else {
-			minEl.On = SystemStatus.Relays.Electrolyser2
+			minEl.On = SystemStatus.Relays.EL1
 		}
 		if minEl.On {
 			minEl.Rate = int8(el.GetRate())
@@ -1356,6 +976,7 @@ func getFullJsonStatus() string {
 		RestartPressure       jsonFloat32 `json:"restart"`
 		Warnings              string      `json:"warnings"`
 		Errors                string      `json:"errors"`
+		IP                    string      `json:"ip"`
 	}
 	type DryerStatus struct {
 		On             bool        `json:"on"`
@@ -1390,6 +1011,15 @@ func getFullJsonStatus() string {
 		TankPressure     jsonFloat32 `json:"tankpressure"`
 	}
 
+	type ACStatus struct {
+		Power       jsonFloat32 `json:"watts"`
+		Current     jsonFloat32 `json:"amps"`
+		Voltage     jsonFloat32 `json:"volts"`
+		Frequency   jsonFloat32 `json:"hertz"`
+		PowerFactor jsonFloat32 `json:"powerfactor"`
+		Energy      jsonFloat32 `json:"energy"`
+	}
+
 	type RelaysStatus struct {
 		El0       bool `json:"el0"`
 		El1       bool `json:"el1"`
@@ -1398,7 +1028,7 @@ func getFullJsonStatus() string {
 		FC0Run    bool `json:"fc0run"`
 		FC1Enable bool `json:"fc1en"`
 		FC1Run    bool `json:"fc1run"`
-		Drain     bool `json:"drain"`
+		Spare     bool `json:"spare"`
 	}
 
 	var Status struct {
@@ -1407,19 +1037,33 @@ func getFullJsonStatus() string {
 		Dryer         DryerStatus           `json:"dr"`
 		FuelCells     []*FuelCellStatus     `json:"fc"`
 		Gas           GasStatus             `json:"gas"`
-		Tds           int64                 `json:"tds"`
+		Tds           float32               `json:"tds"`
+		AC            ACStatus              `json:"ac"`
+		HP            ACStatus              `json:"hp"`
 	}
-	Status.Gas.FuelCellPressure = jsonFloat32(math.Round(float64(SystemStatus.Gas.FuelCellPressure * 1000)))
-	Status.Gas.TankPressure = jsonFloat32(math.Round(SystemStatus.Gas.TankPressure*10) / 10)
+	Status.Gas.FuelCellPressure = jsonFloat32(math.Round(float64(SystemStatus.Gas.FuelCellPressure)*10) / 10)
+	Status.Gas.TankPressure = jsonFloat32(math.Round(float64(SystemStatus.Gas.TankPressure)*10) / 10)
 	Status.Relays.Gas = SystemStatus.Relays.GasToFuelCell
-	Status.Relays.El0 = SystemStatus.Relays.Electrolyser1
-	Status.Relays.El1 = SystemStatus.Relays.Electrolyser2
-	Status.Relays.FC0Enable = SystemStatus.Relays.FuelCell1Enable
-	Status.Relays.FC0Run = SystemStatus.Relays.FuelCell1Run
-	Status.Relays.FC1Enable = SystemStatus.Relays.FuelCell2Enable
-	Status.Relays.FC1Run = SystemStatus.Relays.FuelCell2Run
-	Status.Relays.Drain = SystemStatus.Relays.Drain
+	Status.Relays.El0 = SystemStatus.Relays.EL0
+	Status.Relays.El1 = SystemStatus.Relays.EL1
+	Status.Relays.FC0Enable = SystemStatus.Relays.FC0Enable
+	Status.Relays.FC0Run = SystemStatus.Relays.FC0Run
+	Status.Relays.FC1Enable = SystemStatus.Relays.FC1Enable
+	Status.Relays.FC1Run = SystemStatus.Relays.FC1Run
+	Status.Relays.Spare = SystemStatus.Relays.Spare
 	Status.Tds = SystemStatus.TDS.TdsReading
+	Status.AC.Voltage = jsonFloat32(float32(SystemStatus.AC.ACVolts) / 100)
+	Status.AC.Current = jsonFloat32(float32(SystemStatus.AC.ACCurrent) / 100)
+	Status.AC.Power = jsonFloat32(float32(SystemStatus.AC.ACPower) / 100)
+	Status.AC.Frequency = jsonFloat32(float32(SystemStatus.AC.ACFrequency) / 100)
+	Status.AC.PowerFactor = jsonFloat32(float32(SystemStatus.AC.ACPowerFactor) / 100)
+	Status.AC.Energy = jsonFloat32(float32(SystemStatus.AC.ACEnergy))
+	Status.HP.Voltage = jsonFloat32(float32(SystemStatus.HP.ACVolts) / 100)
+	Status.HP.Current = jsonFloat32(float32(SystemStatus.HP.ACCurrent) / 100)
+	Status.HP.Power = jsonFloat32(float32(SystemStatus.HP.ACPower) / 100)
+	Status.HP.Frequency = jsonFloat32(float32(SystemStatus.HP.ACFrequency) / 100)
+	Status.HP.PowerFactor = jsonFloat32(float32(SystemStatus.HP.ACPowerFactor) / 100)
+	Status.HP.Energy = jsonFloat32(float32(SystemStatus.HP.ACEnergy))
 	Status.Dryer.On = false
 	Status.Dryer.Errors = ""
 	Status.Dryer.Temp0 = 0
@@ -1431,10 +1075,11 @@ func getFullJsonStatus() string {
 	Status.Dryer.Warnings = ""
 	for elnum, el := range SystemStatus.Electrolysers {
 		ElStatus := new(ElectrolyserStatus)
+		ElStatus.IP = el.ip.String()
 		if elnum == 0 {
-			ElStatus.On = SystemStatus.Relays.Electrolyser1
+			ElStatus.On = SystemStatus.Relays.EL0
 		} else {
-			ElStatus.On = SystemStatus.Relays.Electrolyser2
+			ElStatus.On = SystemStatus.Relays.EL1
 		}
 		if ElStatus.On {
 			ElStatus.Serial = el.status.Serial
@@ -1475,17 +1120,18 @@ func getFullJsonStatus() string {
 		FcStatus.On = fc.IsSwitchedOn()
 		FcStatus.Version = fmt.Sprintf("%d.%d.%d", fc.Software.Version, fc.Software.Major, fc.Software.Minor)
 		FcStatus.Serial = string(fc.Serial[:])
-		FcStatus.InletTemp = jsonFloat32(math.Round(float64(fc.InletTemp*10)) / 10)
-		FcStatus.OutletTemp = jsonFloat32(math.Round(float64(fc.OutletTemp*10)) / 10)
+		FcStatus.InletTemp = jsonFloat32(math.Round(float64(fc.InletTemp)/10) / 10)
+		FcStatus.OutletTemp = jsonFloat32(math.Round(float64(fc.OutletTemp)/10) / 10)
 		FcStatus.Power = fc.OutputPower
-		FcStatus.Amps = jsonFloat32(math.Round(float64(fc.OutputCurrent*10)) / 10)
-		FcStatus.Volts = jsonFloat32(math.Round(float64(fc.OutputVolts*10)) / 10)
+		FcStatus.Amps = jsonFloat32(math.Round(float64(fc.OutputCurrent)/10) / 10)
+		FcStatus.Volts = jsonFloat32(math.Round(float64(fc.OutputVolts)/10) / 10)
 		FcStatus.State = fc.GetState()
 		FcStatus.FaultA = strings.Join(getFuelCellError('A', fc.getFaultA()), ":")
 		FcStatus.FaultB = strings.Join(getFuelCellError('B', fc.getFaultB()), ":")
 		FcStatus.FaultC = strings.Join(getFuelCellError('C', fc.getFaultC()), ":")
 		FcStatus.FaultD = strings.Join(getFuelCellError('D', fc.getFaultD()), ":")
-		FcStatus.AnodePressure = jsonFloat32(math.Round(float64(fc.AnodePressure*10)) / 10)
+		//		log.Println("Anode pressure = ", fc.AnodePressure)
+		FcStatus.AnodePressure = jsonFloat32(float32(fc.AnodePressure) / 10)
 
 		Status.FuelCells = append(Status.FuelCells, FcStatus)
 	}
@@ -1510,7 +1156,7 @@ func getMinHtmlStatus(w http.ResponseWriter, _ *http.Request) {
 Turn the fuel cell gas on
 */
 func setGas(w http.ResponseWriter, r *http.Request) {
-	var body OnOffBody
+	var body OnOffPayload
 
 	if bytes, err := io.ReadAll(r.Body); err != nil {
 		ReturnJSONError(w, "Gas", err, http.StatusInternalServerError, true)
@@ -1522,13 +1168,7 @@ func setGas(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var err error
-	if body.State {
-		err = turnOnGas()
-	} else {
-		err = turnOffGas()
-	}
-	if err != nil {
+	if err := mbusRTU.GasOnOff(body.State); err != nil {
 		ReturnJSONError(w, "Gas", err, http.StatusInternalServerError, true)
 		return
 	}
@@ -1536,50 +1176,28 @@ func setGas(w http.ResponseWriter, r *http.Request) {
 }
 
 /**
-Turn on the drain solenoid
+Turn on the spare solenoid
 */
-func setDrain(w http.ResponseWriter, r *http.Request) {
+func setSpare(w http.ResponseWriter, r *http.Request) {
 
-	var body OnOffBody
-	var strCommand string
+	var body OnOffPayload
 
 	if bytes, err := io.ReadAll(r.Body); err != nil {
-		ReturnJSONError(w, "Drain", err, http.StatusInternalServerError, true)
+		ReturnJSONError(w, "Spare", err, http.StatusInternalServerError, true)
 		return
 	} else {
 		debugPrint(string(bytes))
 		if err := json.Unmarshal(bytes, &body); err != nil {
-			ReturnJSONError(w, "Drain", err, http.StatusBadRequest, true)
+			ReturnJSONError(w, "Spare", err, http.StatusBadRequest, true)
 			return
 		}
 	}
-	if body.State {
-		strCommand = "relay drain on"
-	} else {
-		strCommand = "relay drain off"
-	}
-	if _, err := sendCommand(strCommand); err != nil {
-		ReturnJSONError(w, "Drain", err, http.StatusInternalServerError, true)
+	if err := mbusRTU.SpareOnOff(body.State); err != nil {
+		ReturnJSONError(w, "Spare", err, http.StatusInternalServerError, true)
 		return
 	}
 	returnJSONSuccess(w)
 }
-
-/**
-Turn off the drain solenoid
-*/
-//func setDrainOff(w http.ResponseWriter, _ *http.Request) {
-//	_, err := sendCommand("drain off")
-//	if err != nil {
-//		log.Print(err)
-//		_, err = fmt.Fprintf(w, err.Error())
-//		if err != nil {
-//			log.Print(err)
-//		}
-//		return
-//	}
-//	returnJSONSuccess(w)
-//}
 
 type neuteredFileSystem struct {
 	fs http.FileSystem
@@ -1613,26 +1231,21 @@ Returns a JSON structure defining the current system contents
 func getSystem(w http.ResponseWriter, _ *http.Request) {
 	var System struct {
 		Relays              *relayStatus
+		AC                  *acStatus
 		NumElectrolyser     uint8
 		NumFuelCell         uint8
 		FuelCellMaintenance bool
 	}
 	SystemStatus.m.Lock()
 	defer SystemStatus.m.Unlock()
-	if !getRelayStatus() {
-		ReturnJSONErrorString(w, "Relays", "getRelayStatus returned false - not all relays found", http.StatusInternalServerError, true)
-		return
-	}
+	mbusRTU.getRelayStatus()
+	mbusRTU.getACStatus()
+
 	System.Relays = &SystemStatus.Relays
+	System.AC = &SystemStatus.AC
 	var err error
-	if System.NumElectrolyser, err = settings.GetInt8Setting("Num_EL"); err != nil {
-		log.Println(err)
-		System.NumElectrolyser = 2
-	}
-	if System.NumFuelCell, err = settings.GetInt8Setting("Num_FC"); err != nil {
-		log.Println(err)
-		System.NumFuelCell = 2
-	}
+	System.NumElectrolyser = uint8(len(SystemStatus.Electrolysers))
+	System.NumFuelCell = uint8(len(canBus.fuelCell))
 	System.FuelCellMaintenance = params.FuelCellMaintenance
 	bytesArray, err := json.Marshal(System)
 	if err != nil {
@@ -1793,7 +1406,7 @@ func getAvgEnergy() (float64, error) {
 	var value float64
 
 	rows, err := pDB.Query(`select round(avg(power)) from (
-		select sum(greatest(ifnull(fc1OutputPower, 0) + ifnull(fc2OutputPower, 0), 0)) / 3600 as power
+		select sum(greatest(ifnull(fc0OutputPower, 0) + ifnull(fc1OutputPower, 0), 0)) / 3600 as power
 			from logging
 			group by date(logged)) as consumption`)
 	if err != nil {
@@ -1827,12 +1440,12 @@ func getCO2Saved(w http.ResponseWriter, _ *http.Request) {
 	}
 	var err error
 
-	Saved.Active, Saved.Since, err = calculateCO2Saved(`select ((sum(fc1OutputPower) + ifnull(sum(fc2OutputPower), 0)) / 3600000) * 0.16 as co2, min(logged) as since from logging`)
+	Saved.Active, Saved.Since, err = calculateCO2Saved(`select ((sum(fc0OutputPower) + ifnull(sum(fc1OutputPower), 0)) / 3600000) * 0.16 as co2, min(logged) as since from logging`)
 	if err != nil {
 		ReturnJSONError(w, "CO2", err, http.StatusInternalServerError, true)
 		return
 	}
-	Saved.Archive, Saved.Since, err = calculateCO2Saved(`select ((sum(fc1OutputPower) + ifnull(sum(fc2OutputPower), 0)) / 60000) * 0.16 as co2, min(logged) as since from logging_archive`)
+	Saved.Archive, Saved.Since, err = calculateCO2Saved(`select ((sum(fc0OutputPower) + ifnull(sum(fc1OutputPower), 0)) / 60000) * 0.16 as co2, min(logged) as since from logging_archive`)
 	if err != nil {
 		ReturnJSONError(w, "CO2", err, http.StatusInternalServerError, true)
 		return
@@ -1855,112 +1468,18 @@ func getCO2Saved(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-/***
-turnOnGas first checks then turns on the gas if it is off. It delays 2 seconds if the gas was off
-*/
-func turnOnGas() error {
-	if SystemStatus.Relays.GasToFuelCell {
-		// Gas is already on
-		return nil
-	}
-	if _, err := sendCommand("gas on"); err != nil {
-		log.Print(err)
-		return err
-	}
-	time.Sleep(params.GasOnDelay)
-	return nil
-}
-
-func turnOffGas() error {
-	if !SystemStatus.Relays.GasToFuelCell {
-		// Gas is already off
-		return nil
-	}
-	if _, err := sendCommand("gas off"); err != nil {
-		log.Print(err)
-		return err
-	}
-	return nil
-}
-
-/**
-Defines all the available API end points
-*/
-func setUpWebSite() {
-	router := mux.NewRouter().StrictSlash(true)
-	router.HandleFunc("/ws", startDataWebSocket).Methods("GET")
-	router.HandleFunc("/wsFull", startStatusWebSocket).Methods("GET")
-	router.HandleFunc("/status", getStatus).Methods("GET")
-	router.HandleFunc("/fcerrors", getFuelCellErrors).Methods("GET")
-	router.HandleFunc("/fcdetail/{device}/{from}", getFuelCellDetail).Methods("GET")
-	router.HandleFunc("/fcdata/{from}/{to}", getFuelCellHistory).Methods("GET")
-	router.HandleFunc("/fc/{device}/off", setFcOff).Methods("GET", "POST")
-	router.HandleFunc("/fc/{device}/on", setFcOn).Methods("GET", "POST")
-	router.HandleFunc("/fc/{device}/run", setFcRun).Methods("GET", "POST")
-	router.HandleFunc("/fc/{device}/stop", setFcStop).Methods("GET", "POST")
-	router.HandleFunc("/fc/{device}/restart", restartFc).Methods("GET", "POST")
-	router.HandleFunc("/fc/{device}/status", fcStatus).Methods("GET")
-	router.HandleFunc("/fc/{device}/on_off", setFcOnOff).Methods("POST")
-	router.HandleFunc("/fc/maintenance", setFcMaintenance).Methods("POST")
-	router.HandleFunc("/gas", setGas).Methods("PUT")
-	router.HandleFunc("/drain", setDrain).Methods("PUT")
-	router.HandleFunc("/el/{device}", elCommand).Methods("PUT")
-	router.HandleFunc("/eldetail/{device}/{from}/{to}", getElectrolyserDetail).Methods("GET")
-	router.HandleFunc("/el/{device}/on", setElOn).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/off", setElOff).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/setRate", showElectrolyserProductionRatePage).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/status", getElectrolyserJsonStatus).Methods("GET")
-	router.HandleFunc("/el/{device}/start", startElectrolyser).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/stop", stopElectrolyser).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/reboot", rebootElectrolyser).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/preheat", preheatElectrolyser).Methods("GET", "POST")
-	router.HandleFunc("/el/{device}/restartPressure/{bar}", setRestartPressure).Methods("GET", "POST")
-	router.HandleFunc("/el/start", startAllElectrolysers).Methods("GET", "POST")
-	router.HandleFunc("/el/stop", stopAllElectrolysers).Methods("GET", "POST")
-	router.HandleFunc("/el/reboot", rebootAllElectrolysers).Methods("POST")
-	router.HandleFunc("/el/preheat", preheatAllElectrolysers).Methods("GET", "POST")
-	router.HandleFunc("/el/setrate", setElectrolyserRate).Methods("POST")
-	router.HandleFunc("/el/setrate", showRateSetter).Methods("GET")
-	router.HandleFunc("/el/getRate", getElectrolyserRate).Methods("GET")
-	router.HandleFunc("/el/on", setAllElOn).Methods("POST")
-	router.HandleFunc("/el/off", setAllElOff).Methods("POST")
-	router.HandleFunc("/dr/{device}/status", getDryerJsonStatus).Methods("GET")
-	router.HandleFunc("/minStatus", getMinHtmlStatus).Methods("GET")
-	router.HandleFunc("/eldata/{from}/{to}", getElectrolyserHistory).Methods("GET")
-	router.HandleFunc("/powerdata/{from}/{to}", getPowerData).Methods("GET")
-	router.HandleFunc("/co2saved", getCO2Saved).Methods("GET")
-	router.HandleFunc("/system", getSystem).Methods("GET")
-	router.HandleFunc("/candump/{from}/{to}", candump).Methods("GET")
-	router.HandleFunc("/candumpEvent/{event}", candumpEvent).Methods("GET")
-	router.HandleFunc("/canrecord/{to}", canRecord).Methods("GET")
-	router.HandleFunc("/canEvents", listCANEvents).Methods("GET")
-	router.HandleFunc("/settings", getSettings).Methods("GET")
-	router.HandleFunc("/settings", updateSettings).Methods("POST")
-	fileServer := http.FileServer(neuteredFileSystem{http.Dir("./web")})
-	router.PathPrefix("/").Handler(http.StripPrefix("/", fileServer))
-
-	log.Fatal(http.ListenAndServe(":20080", router))
-}
-
-/**
-Function to read the responses form the esm command line application
-*/
-func commandResponseReader(outPipe *bufio.Reader) {
-	for {
-		text, err := outPipe.ReadString('>')
-		if err != nil {
-			log.Println("CommandResponseReader error - ", err)
-			return
-		}
-		if strings.Trim(text, " ") != string(esmPrompt) {
-			commandResponse <- text
-		}
-	}
-}
-
 func init() {
-	var settingFile string
-
+	var (
+		CommsPort         string
+		BaudRate          uint
+		DataBits          uint
+		StopBits          uint
+		Parity            string
+		TimeoutSecs       uint
+		RelaySlaveAddress uint
+		ACSlaveAddress    uint
+		HPSlaveAddress    uint
+	)
 	SystemStatus.valid = false // Prevents logging until we have some actual data
 	// Set up logging
 	logwriter, e := syslog.New(syslog.LOG_NOTICE, "FireflyWeb")
@@ -1968,22 +1487,29 @@ func init() {
 		log.SetOutput(logwriter)
 	}
 
+	// Root password for database = 'ElektrikGreen2022'
 	// Get the settings
 	flag.StringVar(&databaseServer, "sqlServer", "localhost", "MySQL Server")
 	flag.StringVar(&databaseName, "database", "firefly", "Database name")
 	flag.StringVar(&databaseLogin, "dbUser", "FireflyService", "Database login user name")
 	flag.StringVar(&databasePassword, "dbPassword", "logger", "Database user password")
 	flag.StringVar(&databasePort, "dbPort", "3306", "Database port")
-	flag.StringVar(&executable, "exec", "./esm-3.17.13", "Path to the FireFly esm executable")
 	flag.StringVar(&CANInterface, "can", "can0", "CAN Interface Name")
-	flag.StringVar(&settingFile, "settings", "/esm/system.config", "Path to the settings file")
 	flag.StringVar(&jsonSettings, "jsonSettings", "/etc/FireFlyWeb.json", "JSON file containing the system control parameters")
+
+	// Modbus RTU stuff
+	flag.StringVar(&CommsPort, "Port", "rtu:///dev/ttyUSB0", "communication port for the Modbus RTU equipment")
+	flag.UintVar(&BaudRate, "baudrate", 9600, "communication port baud rate for the Modbus RTU equipment")
+	flag.UintVar(&DataBits, "databits", 8, "communication port data bits for the Modbus RTU equipment")
+	flag.UintVar(&StopBits, "stopbits", 1, "communication port stop bits for the Modbus RTU equipment")
+	flag.StringVar(&Parity, "parity", "N", "communication port parity for the Modbus RTU equipment")
+	flag.UintVar(&TimeoutSecs, "timeout", 5, "communication port timeout in seconds for the Modbus RTU equipment")
+	flag.UintVar(&RelaySlaveAddress, "relayslave", 10, "Modbus slave ID for the Modbus RTU equipment handling the relays and analogue input")
+	flag.UintVar(&ACSlaveAddress, "acslave", 1, "Modbus slave ID for the AC measurement device")
+	flag.UintVar(&HPSlaveAddress, "hpslave", 20, "Modbus slave ID for the HeatPump AC measurement device")
+
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
-
-	if err := settings.ReadSettings(settingFile); err != nil {
-		log.Println("Error reading settings file - ", err)
-	}
 
 	params = NewJsonSettings()
 	if err := params.ReadSettings(jsonSettings); err != nil {
@@ -1995,42 +1521,19 @@ func init() {
 		log.Println("running in non-debug mode")
 	}
 
-	commandResponse = make(chan string)
-	esmCommand.valid = false
-	var err error
-
-	if pDB, err = connectToDatabase(); err != nil {
+	if dbPtr, err := connectToDatabase(); err != nil {
 		log.Println(`Cannot connect to the database - `, err)
+	} else {
+		pDB = dbPtr
 	}
 
-	canBus = initCANLogger(systemConfig.NumFc)
-
-	esmCommand.command = exec.Command(executable)
-	esmCommand.stdin, err = esmCommand.command.StdinPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	esmCommand.stdout, err = esmCommand.command.StdoutPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	outPipe := bufio.NewReader(esmCommand.stdout)
-	if err = esmCommand.command.Start(); err != nil {
-		log.Fatal(err)
-	}
-
-	go commandResponseReader(outPipe)
-
-	esmCommand.valid = true
-	time.Sleep(2 * time.Second)
+	canBus = initCANLogger()
+	mbusRTU = NewModbusRTUIO(CommsPort, BaudRate, DataBits, StopBits, Parity, TimeoutSecs, uint8(RelaySlaveAddress), uint8(ACSlaveAddress), uint8(HPSlaveAddress))
 
 	go setUpWebSite()
 
 	// Calculate the time we should start trying to turn the electorlysers off and archive the old data
 	CalculateOffTime()
-
 }
 
 func loggingLoop() {
@@ -2071,17 +1574,76 @@ func loggingLoop() {
 	}
 }
 
-func main() {
-	startup := <-commandResponse
-	_, err := fmt.Println(startup)
-	if err != nil {
-		log.Print(err)
+/*
+AcquireFuelCells will turn on the fuel cells and wait 30 secnds then turn them off again
+*/
+func AcquireFuelCells() {
+	for s := 0; s < 10; s++ {
+		if mbusRTU.Active {
+			break
+		}
+		time.Sleep(time.Second)
 	}
 
-	getSystemInfo()
-	log.Println("FireflyWeb Starting with ", systemConfig.NumFc, " Fuelcells : ", systemConfig.NumEl, " Electrolysers : ", systemConfig.NumDryer, " Dryers")
+	if !mbusRTU.Active {
+		log.Fatal("Timed out waiting for Modbus Relays to come on line.")
+	}
+
+	if !mbusRTU.fc0en {
+		if err := mbusRTU.FC0OnOff(true); err != nil {
+			log.Print(err)
+		}
+		time.AfterFunc(time.Second*15, func() {
+			if err := mbusRTU.FC0OnOff(false); err != nil {
+				log.Print(err)
+			}
+		})
+	}
+	if !mbusRTU.fc1en {
+		if err := mbusRTU.FC1OnOff(true); err != nil {
+			log.Print(err)
+		}
+		time.AfterFunc(time.Second*15, func() {
+			if err := mbusRTU.FC1OnOff(false); err != nil {
+				log.Print(err)
+			}
+		})
+	}
+}
+
+func main() {
 	dataSignal = sync.NewCond(&sync.Mutex{})
 	statusSignal = sync.NewCond(&sync.Mutex{})
 
+	log.Println("Starting the CAN logger")
+	go canBus.logCANData()
+	log.Println("Starting the CAN monitor")
+	go canBus.CanBusMonitor()
+	log.Println("Starting the Modbus RTU manager")
+	go mbusRTU.StartModbusIO()
+
+	for _, el := range params.Electrolysers {
+		if el.ID == 0 {
+			IP := net.ParseIP(el.IP)
+			electrolyser := NewElectrolyser(IP)
+			SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, electrolyser)
+		}
+	}
+	if len(SystemStatus.Electrolysers) == 1 {
+		for _, el := range params.Electrolysers {
+			if el.ID == 1 {
+				IP := net.ParseIP(el.IP)
+				electrolyser := NewElectrolyser(IP)
+				SystemStatus.Electrolysers = append(SystemStatus.Electrolysers, electrolyser)
+			}
+		}
+	}
+
+	if len(SystemStatus.Electrolysers) == 0 {
+		go AcquireElectrolysers()
+	}
+	AcquireFuelCells()
+
+	// Start the logging loop
 	loggingLoop()
 }
